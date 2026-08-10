@@ -11,7 +11,7 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Versao do Swift (diagnostico)
+      - name: Versao do Swift
         run: swift --version
       - name: Testar CadernoCore
         run: swift test
@@ -21,14 +21,17 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Listar schemes disponiveis
+      - name: Compilar o app e reportar erros no resumo
         working-directory: BonfimBook.swiftpm
-        run: xcodebuild -list || true
-      - name: Compilar o app (best-effort)
-        working-directory: BonfimBook.swiftpm
-        run: >
-          xcodebuild
-          -scheme BonfimBook
-          -destination 'generic/platform=iOS'
-          CODE_SIGNING_ALLOWED=NO
-          build
+        run: |
+          set +e
+          xcodebuild -scheme BonfimBook -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build > build.log 2>&1
+          code=$?
+          {
+            echo "## smoke-app (exit $code)"
+            echo "### Erros e avisos"
+            echo '```'
+            grep -E ": error:|: warning:" build.log | sed 's#/Users/runner/work/bonfimbook/bonfimbook/##g' | sort -u | head -100
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
