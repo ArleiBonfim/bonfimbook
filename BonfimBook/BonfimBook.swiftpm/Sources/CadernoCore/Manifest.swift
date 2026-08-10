@@ -15,14 +15,19 @@ public struct Manifest: Codable, Equatable {
     public var createdAt: Date
     public var updatedAt: Date
     public var pageOrder: [String]    // ids na ordem de exibição
+    // OPCIONAL de propósito: manifests v1 (sem este campo) decodificam com nil, sem bump
+    // de schema. Quando nil, o encoder omite a chave — arquivos antigos seguem idênticos.
+    public var coverColorHex: String? // cor da capa; nil = padrão
 
     public init(schemaVersion: Int, notebookID: String, title: String,
-                createdAt: Date, updatedAt: Date, pageOrder: [String]) {
+                createdAt: Date, updatedAt: Date, pageOrder: [String],
+                coverColorHex: String? = nil) {
         self.schemaVersion = schemaVersion
         self.notebookID = notebookID
         self.title = title
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.pageOrder = pageOrder
+        self.coverColorHex = coverColorHex
     }
 }

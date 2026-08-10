@@ -44,7 +44,10 @@ public final class NotebookStore {
     // MARK: - Criar / Abrir
 
     /// Cria um novo pacote `.caderno` dentro de `parentDirectory`, já com 1 página em branco.
-    public static func create(at parentDirectory: URL, title: String) throws -> NotebookStore {
+    /// `coverColorHex` (opcional, no fim) grava a cor da capa no manifest; a assinatura antiga
+    /// `create(at:title:)` continua válida pelo default nil.
+    public static func create(at parentDirectory: URL, title: String,
+                              coverColorHex: String? = nil) throws -> NotebookStore {
         let url = packageURL(in: parentDirectory, title: title)
         let fm = FileManager.default
 
@@ -79,7 +82,8 @@ public final class NotebookStore {
                                 title: title,
                                 createdAt: now,
                                 updatedAt: now,
-                                pageOrder: [])
+                                pageOrder: [],
+                                coverColorHex: coverColorHex)
         try store.saveManifest(manifest)
 
         // Primeira página em branco (reusa a lógica normal, mantém invariantes).
@@ -256,6 +260,34 @@ public final class NotebookStore {
         manifest.pageOrder.remove(at: from)
         let clamped = min(max(0, toIndex), manifest.pageOrder.count)
         manifest.pageOrder.insert(id, at: clamped)
+        manifest.updatedAt = Date()
+        try saveManifest(manifest)
+    }
+
+    /// Troca o estilo de papel de uma página (grava `PageMeta.template` como String) e
+    /// carimba `updatedAt` na página e no manifest. Mesmo padrão atômico de `writeDrawing`.
+    public func setTemplate(_ template: String, pageID: String) throws {
+        lock.lock(); defer { lock.unlock() }
+
+        // Exige que a página exista (readPageMeta lança .notFound caso contrário).
+        var meta = try readPageMeta(pageID)
+
+        let now = Date()
+        meta.template = template
+        meta.updatedAt = now
+        try writeJSON(meta, to: pageMetaURL(pageID))
+
+        // Manifest também é carimbado (para backup/sync saberem que algo mudou).
+        var manifest = try loadManifest()
+        manifest.updatedAt = now
+        try saveManifest(manifest)
+    }
+
+    /// Atualiza a cor da capa no manifest (`nil` volta ao padrão) e carimba `updatedAt`.
+    public func setCoverColor(_ hex: String?) throws {
+        lock.lock(); defer { lock.unlock() }
+        var manifest = try loadManifest()
+        manifest.coverColorHex = hex
         manifest.updatedAt = Date()
         try saveManifest(manifest)
     }

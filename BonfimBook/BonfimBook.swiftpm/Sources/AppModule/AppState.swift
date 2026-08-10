@@ -1,17 +1,18 @@
 import Foundation
 import CadernoCore
 
-/// Dono do `NotebookStore` atual e do id da página aberta.
-/// Assinatura fixada no CONTRACT.md — não alterar campos públicos.
+/// Estado global mínimo do app (Fase 1+). O caderno aberto NÃO mora mais aqui —
+/// a navegação (NavigationStack + `LibraryView`/`NotebookView`) cuida disso.
+/// Guarda apenas o `BackupManager` e o diretório da biblioteca.
 @MainActor
 final class AppState: ObservableObject {
-    @Published var store: NotebookStore
-    @Published var currentPageID: String
-    let backup: BackupManager        // injetado
+    /// Diretório onde vivem os pacotes `*.caderno` (normalmente `.documentDirectory`).
+    let libraryDirectory: URL
+    /// Camada de backup global (também injetada como `@EnvironmentObject` no `CadernoApp`).
+    let backup: BackupManager
 
-    init(store: NotebookStore, currentPageID: String, backup: BackupManager) {
-        self.store = store
-        self.currentPageID = currentPageID
+    init(libraryDirectory: URL, backup: BackupManager) {
+        self.libraryDirectory = libraryDirectory
         self.backup = backup
     }
 }

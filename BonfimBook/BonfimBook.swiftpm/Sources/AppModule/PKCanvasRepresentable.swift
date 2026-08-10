@@ -22,7 +22,10 @@ struct PKCanvasRepresentable: UIViewRepresentable {
         canvas.delegate = context.coordinator
         canvas.drawingPolicy = drawingPolicy
         canvas.alwaysBounceVertical = false
-        canvas.backgroundColor = .systemBackground
+        // Fundo transparente para o PaperBackgroundView (o papel) aparecer atrás.
+        // Nunca `.systemBackground` — ficaria preto no dark mode (ver CONTRACT gotchas).
+        canvas.backgroundColor = .clear
+        canvas.isOpaque = false
 
         // Carga inicial: bytes opacos → PKDrawing. `nil` = página ainda sem traço.
         // `try?` sobre uma função que devolve `Data?` já entrega `Data?` (Swift achata o
