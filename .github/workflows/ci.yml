@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versao do Swift (diagnostico)
+        run: swift --version
+      - name: Testar CadernoCore
+        run: swift test
+
+  smoke-app:
+    runs-on: macos-14
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Listar schemes disponiveis
+        working-directory: BonfimBook.swiftpm
+        run: xcodebuild -list || true
+      - name: Compilar o app (best-effort)
+        working-directory: BonfimBook.swiftpm
+        run: >
+          xcodebuild
+          -scheme BonfimBook
+          -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO
+          build
