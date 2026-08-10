@@ -1,0 +1,21 @@
+# Este repositório é PÚBLICO e contém APENAS CÓDIGO.
+# Nunca versione anotações, cadernos ou dados pessoais do usuário.
+
+# --- macOS ---
+.DS_Store
+
+# --- Build do Swift Package Manager / Xcode ---
+.build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcworkspace
+
+# --- Anotações e dados do usuário (NUNCA subir) ---
+# Pacotes de caderno gerados pelo app e qualquer exportação.
+*.caderno/
+*.caderno
+Exportacoes/
+Exportações/
+Backups/
