@@ -95,10 +95,13 @@ final class BackupManager: NSObject, ObservableObject {
                 try fm.copyItem(at: pkg, to: dest)
 
                 let now = Date()
-                Task { @MainActor in self?.status = .synced(now) }
+                // A Task captura `self` por conta própria (`[weak self]`) para não
+                // referenciar o `var self` do closure de fora dentro de código que roda
+                // em paralelo — o que o Swift proíbe (erro "captured var 'self'").
+                Task { @MainActor [weak self] in self?.status = .synced(now) }
             } catch {
                 let msg = error.localizedDescription
-                Task { @MainActor in self?.status = .failed(msg) }
+                Task { @MainActor [weak self] in self?.status = .failed(msg) }
             }
         }
     }
@@ -134,7 +137,7 @@ final class BackupManager: NSObject, ObservableObject {
                 // Sucesso: cópia de segurança feita; deixamos o status como está.
             } catch {
                 let msg = "Falha na exportação de segurança: \(error.localizedDescription)"
-                Task { @MainActor in self?.status = .failed(msg) }
+                Task { @MainActor [weak self] in self?.status = .failed(msg) }
             }
         }
     }
