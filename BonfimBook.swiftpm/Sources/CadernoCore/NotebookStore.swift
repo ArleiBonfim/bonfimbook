@@ -294,6 +294,16 @@ public final class NotebookStore {
         try saveManifest(manifest)
     }
 
+    /// Define (ou remove, com nil) o hash da senha do caderno no manifest. O Core só
+    /// guarda a String opaca — quem calcula/compara o hash é a camada de UI.
+    public func setLockHash(_ hash: String?) throws {
+        lock.lock(); defer { lock.unlock() }
+        var manifest = try loadManifest()
+        manifest.lockPINHash = hash
+        manifest.updatedAt = Date()
+        try saveManifest(manifest)
+    }
+
     /// Renomeia o caderno. Só troca `title` no manifest — o ARQUIVO do pacote NÃO é
     /// renomeado de propósito: a URL do pacote é usada pela navegação e pelos bookmarks de
     /// backup, e o título exibido sempre vem do manifest. Título vazio é ignorado (mantém o

@@ -176,6 +176,25 @@ final class LibraryAndTemplateTests: CadernoTestCase {
         XCTAssertEqual(try NotebookLibrary.listFolders(in: tempDir).count, 2)
     }
 
+    // MARK: - Senha (lockPINHash) refletido em NotebookRef.isLocked
+
+    func test_setLockHash_reflectedInList() throws {
+        let store = try NotebookLibrary.create(in: tempDir, title: "Secreto", coverColorHex: nil)
+        XCTAssertEqual(try NotebookLibrary.list(in: tempDir).first?.isLocked, false)
+
+        try store.setLockHash("hash-fake-123")
+        XCTAssertEqual(try store.loadManifest().lockPINHash, "hash-fake-123")
+        XCTAssertEqual(try NotebookLibrary.list(in: tempDir).first?.isLocked, true)
+
+        // Reabre: o hash persiste.
+        let reopened = try NotebookStore.open(packageURL: store.packageURL)
+        XCTAssertEqual(try reopened.loadManifest().lockPINHash, "hash-fake-123")
+
+        try reopened.setLockHash(nil)
+        XCTAssertNil(try reopened.loadManifest().lockPINHash)
+        XCTAssertEqual(try NotebookLibrary.list(in: tempDir).first?.isLocked, false)
+    }
+
     // MARK: - 4. setTemplate persiste
 
     func test_setTemplate_persists() throws {

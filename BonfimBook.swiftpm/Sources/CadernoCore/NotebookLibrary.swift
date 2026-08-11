@@ -8,13 +8,16 @@ public struct NotebookRef: Equatable {
     public let updatedAt: Date
     public let pageCount: Int
     public let coverColorHex: String?
+    public let isLocked: Bool
 
-    public init(url: URL, title: String, updatedAt: Date, pageCount: Int, coverColorHex: String?) {
+    public init(url: URL, title: String, updatedAt: Date, pageCount: Int,
+                coverColorHex: String?, isLocked: Bool = false) {
         self.url = url
         self.title = title
         self.updatedAt = updatedAt
         self.pageCount = pageCount
         self.coverColorHex = coverColorHex
+        self.isLocked = isLocked
     }
 }
 
@@ -79,7 +82,8 @@ public enum NotebookLibrary {
                                     title: manifest.title,
                                     updatedAt: manifest.updatedAt,
                                     pageCount: manifest.pageOrder.count,
-                                    coverColorHex: manifest.coverColorHex))
+                                    coverColorHex: manifest.coverColorHex,
+                                    isLocked: manifest.lockPINHash != nil))
         }
 
         // Mais recente primeiro. Desempate estável por título para uma ordem determinística.

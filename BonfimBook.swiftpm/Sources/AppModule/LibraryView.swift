@@ -35,6 +35,14 @@ struct LibraryView: View {
     @State private var showDiagnostics = false
     @State private var errorMessage: String?
 
+    // Senha (PIN) de caderno.
+    @State private var pinPurpose: PINPurpose?
+    @State private var pinTargetURL: URL?
+    @State private var pinEntry = ""
+    @State private var pinConfirm = ""
+    /// Cadernos já desbloqueados nesta sessão (não pede senha de novo até fechar o app).
+    @State private var unlockedURLs: Set<URL> = []
+
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 20)]
 
     /// Estamos na raiz? (compara caminhos padronizados para evitar diferença de "/" final).
@@ -58,6 +66,9 @@ struct LibraryView: View {
                 }
                 .sheet(isPresented: $showDiagnostics) {
                     PenDiagnosticView()
+                }
+                .sheet(isPresented: boolBinding($pinPurpose)) {
+                    pinSheet
                 }
                 .confirmationDialog(
                     "Apagar este caderno?",
@@ -170,7 +181,7 @@ struct LibraryView: View {
         LazyVGrid(columns: columns, spacing: 24) {
             ForEach(notebooks, id: \.url) { ref in
                 Button {
-                    open(ref.url)
+                    openOrGate(ref)
                 } label: {
                     NotebookCoverCell(ref: ref)
                 }
@@ -187,6 +198,19 @@ struct LibraryView: View {
                             pendingMove = ref
                         } label: {
                             Label("Mover para pasta", systemImage: "folder")
+                        }
+                    }
+                    if ref.isLocked {
+                        Button {
+                            startPIN(.remove, for: ref.url)
+                        } label: {
+                            Label("Remover senha", systemImage: "lock.open")
+                        }
+                    } else {
+                        Button {
+                            startPIN(.setNew, for: ref.url)
+                        } label: {
+                            Label("Proteger com senha", systemImage: "lock")
                         }
                     }
                     Button(role: .destructive) {
@@ -351,6 +375,110 @@ struct LibraryView: View {
         path.append(url)
     }
 
+    /// Abre o caderno; se tiver senha e ainda não foi desbloqueado nesta sessão, pede o PIN.
+    private func openOrGate(_ ref: NotebookRef) {
+        if ref.isLocked && !unlockedURLs.contains(ref.url) {
+            startPIN(.unlock, for: ref.url)
+        } else {
+            open(ref.url)
+        }
+    }
+
+    private func startPIN(_ purpose: PINPurpose, for url: URL) {
+        pinTargetURL = url
+        pinEntry = ""
+        pinConfirm = ""
+        pinPurpose = purpose
+    }
+
+    /// Trata o "OK" da telinha de senha conforme o propósito (definir/desbloquear/remover).
+    private func submitPIN() {
+        guard let purpose = pinPurpose, let url = pinTargetURL else { return }
+        switch purpose {
+        case .setNew:
+            let pin = pinEntry.trimmingCharacters(in: .whitespaces)
+            guard pin.count >= 4 else {
+                errorMessage = "A senha precisa de ao menos 4 dígitos."
+                return
+            }
+            guard pin == pinConfirm.trimmingCharacters(in: .whitespaces) else {
+                errorMessage = "As senhas não conferem."
+                return
+            }
+            do {
+                let store = try NotebookStore.open(packageURL: url)
+                try store.setLockHash(PINHasher.hash(pin))
+                pinPurpose = nil
+                reload()
+            } catch {
+                errorMessage = "Não foi possível proteger o caderno: \(error.localizedDescription)"
+            }
+
+        case .unlock:
+            do {
+                let hash = try NotebookStore.open(packageURL: url).loadManifest().lockPINHash
+                if PINHasher.matches(pinEntry, hash: hash) {
+                    unlockedURLs.insert(url)
+                    pinPurpose = nil
+                    open(url)
+                } else {
+                    errorMessage = "Senha incorreta."
+                }
+            } catch {
+                errorMessage = "Não foi possível abrir o caderno: \(error.localizedDescription)"
+            }
+
+        case .remove:
+            do {
+                let store = try NotebookStore.open(packageURL: url)
+                let hash = try store.loadManifest().lockPINHash
+                if PINHasher.matches(pinEntry, hash: hash) {
+                    try store.setLockHash(nil)
+                    pinPurpose = nil
+                    reload()
+                } else {
+                    errorMessage = "Senha incorreta."
+                }
+            } catch {
+                errorMessage = "Não foi possível remover a senha: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Telinha de senha (PIN)
+
+    private var pinTitle: String {
+        switch pinPurpose {
+        case .setNew: return "Proteger com senha"
+        case .unlock: return "Digite a senha"
+        case .remove: return "Remover senha"
+        case .none: return ""
+        }
+    }
+
+    private var pinSheet: some View {
+        NavigationStack {
+            Form {
+                SecureField("Senha (mín. 4 dígitos)", text: $pinEntry)
+                    .keyboardType(.numberPad)
+                if pinPurpose == .setNew {
+                    SecureField("Confirmar senha", text: $pinConfirm)
+                        .keyboardType(.numberPad)
+                }
+            }
+            .navigationTitle(pinTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") { pinPurpose = nil }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("OK") { submitPIN() }
+                }
+            }
+        }
+    }
+
     private func delete(_ ref: NotebookRef) {
         pendingDelete = nil
         do {
@@ -412,6 +540,13 @@ struct LibraryView: View {
     static let coverPalette: [String] = [
         "#E8705A", "#F2B134", "#5AAE7A", "#4E86C7", "#8E6FC0", "#D96FA0"
     ]
+}
+
+/// Propósito da telinha de senha: criar, desbloquear para abrir, ou remover.
+private enum PINPurpose: Equatable {
+    case setNew
+    case unlock
+    case remove
 }
 
 // MARK: - Célula de PASTA
@@ -480,6 +615,16 @@ private struct NotebookCoverCell: View {
                     .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
                     .padding(14)
                     .padding(.leading, 6)
+            }
+            .overlay(alignment: .topTrailing) {
+                if ref.isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding(6)
+                        .background(.black.opacity(0.35), in: Circle())
+                        .padding(8)
+                }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)

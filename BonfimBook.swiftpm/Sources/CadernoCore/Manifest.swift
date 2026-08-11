@@ -18,10 +18,14 @@ public struct Manifest: Codable, Equatable {
     // OPCIONAL de propósito: manifests v1 (sem este campo) decodificam com nil, sem bump
     // de schema. Quando nil, o encoder omite a chave — arquivos antigos seguem idênticos.
     public var coverColorHex: String? // cor da capa; nil = padrão
+    // OPCIONAL, mesma regra: hash (embaralhamento) da senha do caderno. nil = sem senha.
+    // O Core NUNCA calcula nem guarda a senha em si — só armazena esta String opaca, que a
+    // camada de UI produz/compara. Assim o Core segue só-Foundation (sem CryptoKit).
+    public var lockPINHash: String?
 
     public init(schemaVersion: Int, notebookID: String, title: String,
                 createdAt: Date, updatedAt: Date, pageOrder: [String],
-                coverColorHex: String? = nil) {
+                coverColorHex: String? = nil, lockPINHash: String? = nil) {
         self.schemaVersion = schemaVersion
         self.notebookID = notebookID
         self.title = title
@@ -29,5 +33,6 @@ public struct Manifest: Codable, Equatable {
         self.updatedAt = updatedAt
         self.pageOrder = pageOrder
         self.coverColorHex = coverColorHex
+        self.lockPINHash = lockPINHash
     }
 }
