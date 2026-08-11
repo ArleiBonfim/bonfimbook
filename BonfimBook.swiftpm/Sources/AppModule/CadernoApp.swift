@@ -9,6 +9,7 @@ import CadernoCore
 struct CadernoApp: App {
     @StateObject private var appState: AppState
     @StateObject private var backup: BackupManager
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // Camada de backup (agente D) — assinatura `init()` sem parâmetros.
@@ -30,6 +31,13 @@ struct CadernoApp: App {
             LibraryView()
                 .environmentObject(backup)
                 .environmentObject(appState)
+                .onChange(of: scenePhase) { phase in
+                    // Ao sair do app (segundo plano), copia TODOS os cadernos para a pasta de
+                    // backup (se escolhida) + uma cópia local. Rede de segurança automática.
+                    if phase == .background {
+                        backup.backupEverything(libraryRoot: appState.libraryDirectory)
+                    }
+                }
         }
     }
 

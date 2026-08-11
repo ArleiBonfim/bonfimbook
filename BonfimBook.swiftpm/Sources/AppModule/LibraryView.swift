@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import CadernoCore
 
 /// Tela inicial do app: a biblioteca de cadernos, agora com PASTAS.
@@ -33,6 +34,8 @@ struct LibraryView: View {
     @State private var showNewFolder = false
     @State private var newFolderName = ""
     @State private var showDiagnostics = false
+    @State private var showBackupOptions = false
+    @State private var infoMessage: String?
     @State private var errorMessage: String?
 
     // Senha (PIN) de caderno.
@@ -123,6 +126,17 @@ struct LibraryView: View {
                 moveTargets(for: ref)
                 Button("Cancelar", role: .cancel) { pendingMove = nil }
             }
+            .confirmationDialog(
+                "Backup dos seus cadernos",
+                isPresented: $showBackupOptions,
+                titleVisibility: .visible
+            ) {
+                Button("Escolher pasta de backup (iCloud)") { chooseBackupFolder() }
+                Button("Fazer backup agora") { backupNow() }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Guarde uma cópia de TODOS os cadernos numa pasta do iCloud Drive, fora do app. Assim, mesmo que o app seja apagado ou reinstalado, suas anotações continuam salvas.")
+            }
     }
 
     private func withAlerts<V: View>(_ v: V) -> some View {
@@ -147,6 +161,15 @@ struct LibraryView: View {
                 presenting: errorMessage
             ) { _ in
                 Button("OK", role: .cancel) { errorMessage = nil }
+            } message: { msg in
+                Text(msg)
+            }
+            .alert(
+                "Backup",
+                isPresented: boolBinding($infoMessage),
+                presenting: infoMessage
+            ) { _ in
+                Button("OK", role: .cancel) { infoMessage = nil }
             } message: { msg in
                 Text(msg)
             }
@@ -296,7 +319,13 @@ struct LibraryView: View {
                 }
                 .accessibilityLabel("Voltar para a pasta anterior")
             }
-            BackupStatusView()
+            Button {
+                showBackupOptions = true
+            } label: {
+                BackupStatusView()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Opções de backup")
         }
         ToolbarItemGroup(placement: .navigationBarTrailing) {
             Button {
@@ -550,6 +579,46 @@ struct LibraryView: View {
         var n = notebooks.count + 1
         while existing.contains("Caderno \(n)") { n += 1 }
         return "Caderno \(n)"
+    }
+
+    // MARK: - Backup
+
+    /// Abre o seletor de pasta do sistema para o usuário escolher onde guardar a cópia
+    /// (idealmente uma pasta no iCloud Drive).
+    private func chooseBackupFolder() {
+        guard let vc = Self.topViewController() else {
+            errorMessage = "Não consegui abrir o seletor de pasta agora. Tente de novo."
+            return
+        }
+        backup.chooseFolder(presenting: vc)
+    }
+
+    /// Copia todos os cadernos para a pasta escolhida (e uma cópia local de segurança).
+    private func backupNow() {
+        let root = rootDir ?? (try? NotebookLibrary.defaultDirectory())
+        guard let root = root else {
+            errorMessage = "Não foi possível localizar a pasta de cadernos."
+            return
+        }
+        backup.backupEverything(libraryRoot: root)
+        if backup.hasFolder() {
+            infoMessage = "Backup em andamento. Quando a bolinha ficar verde, está tudo salvo na sua pasta."
+        } else {
+            infoMessage = "Fiz uma cópia local de segurança. Para proteger contra apagar o app, toque em \u{201C}Escolher pasta de backup (iCloud)\u{201D}."
+        }
+    }
+
+    /// Acha a tela (UIViewController) ativa para apresentar o seletor de pasta.
+    private static func topViewController() -> UIViewController? {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        let window = scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController {
+            top = presented
+        }
+        return top
     }
 
     /// Helper: transforma um `@State` opcional num `Binding<Bool>` para diálogos/alertas.

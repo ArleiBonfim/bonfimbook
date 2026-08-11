@@ -106,6 +106,112 @@ final class BackupManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Backup COMPLETO (todos os cadernos de uma vez)
+
+    /// Copia TODOS os cadernos (`*.caderno`) da biblioteca para: (1) a pasta escolhida pelo
+    /// usuário no iCloud/Arquivos — a proteção que sobrevive à exclusão do app — e (2) uma
+    /// cópia local de segurança em `Documents/Exportacoes/<data>/` (plano B contra corrupção
+    /// interna). Roda inteiro fora da main thread. Usado no envio ao segundo plano e no botão
+    /// "Fazer backup agora".
+    func backupEverything(libraryRoot: URL) {
+        status = .syncing
+        let bookmark = UserDefaults.standard.data(forKey: backupBookmarkKey)
+
+        ioQueue.async { [weak self] in
+            let fm = FileManager.default
+            let packages = BackupManager.findPackages(under: libraryRoot, fm: fm)
+
+            // (2) Cópia local de segurança — sempre, mesmo sem pasta escolhida.
+            var localError: String?
+            do {
+                let docs = try fm.url(for: .documentDirectory, in: .userDomainMask,
+                                      appropriateFor: nil, create: true)
+                let batch = docs.appendingPathComponent("Exportacoes", isDirectory: true)
+                    .appendingPathComponent(BackupManager.timestamp(from: Date()), isDirectory: true)
+                try fm.createDirectory(at: batch, withIntermediateDirectories: true)
+                for pkg in packages {
+                    let dest = batch.appendingPathComponent(pkg.lastPathComponent, isDirectory: true)
+                    if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                    try fm.copyItem(at: pkg, to: dest)
+                }
+                BackupManager.pruneOldExports(in: docs.appendingPathComponent("Exportacoes", isDirectory: true), keep: 5, fm: fm)
+            } catch {
+                localError = error.localizedDescription
+            }
+
+            // (1) Espelho na pasta do usuário (iCloud/Arquivos), se houver uma escolhida.
+            guard let bookmark = bookmark else {
+                let msg = localError
+                Task { @MainActor [weak self] in
+                    self?.status = msg == nil ? .noFolder : .failed("Backup local falhou: \(msg!)")
+                }
+                return
+            }
+
+            do {
+                let (folder, refreshed) = try BackupManager.resolveFolder(bookmark)
+                if let refreshed {
+                    Task { @MainActor in UserDefaults.standard.set(refreshed, forKey: backupBookmarkKey) }
+                }
+                guard folder.startAccessingSecurityScopedResource() else {
+                    throw BackupManager.makeError("Sem permissão de acesso à pasta escolhida.")
+                }
+                defer { folder.stopAccessingSecurityScopedResource() }
+
+                for pkg in packages {
+                    let dest = folder.appendingPathComponent(pkg.lastPathComponent, isDirectory: true)
+                    if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+                    try fm.copyItem(at: pkg, to: dest)
+                }
+                let now = Date()
+                Task { @MainActor [weak self] in self?.status = .synced(now) }
+            } catch {
+                let msg = error.localizedDescription
+                Task { @MainActor [weak self] in self?.status = .failed(msg) }
+            }
+        }
+    }
+
+    /// Encontra todos os pacotes `*.caderno` sob `root` (entra em subpastas, mas NÃO desce
+    /// dentro do pacote nem na lixeira/exportações).
+    nonisolated private static func findPackages(under root: URL, fm: FileManager) -> [URL] {
+        var result: [URL] = []
+        func walk(_ dir: URL) {
+            guard let items = try? fm.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]) else { return }
+            for item in items {
+                if item.pathExtension == "caderno" {
+                    result.append(item)
+                } else {
+                    let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                    let name = item.lastPathComponent
+                    if isDir && name != "Exportacoes" && name != ".Lixeira" {
+                        walk(item)
+                    }
+                }
+            }
+        }
+        walk(root)
+        return result
+    }
+
+    /// Mantém só os `keep` backups locais mais recentes em `Documents/Exportacoes/` (evita
+    /// encher o armazenamento). Nunca toca na pasta de backup do iCloud do usuário.
+    nonisolated private static func pruneOldExports(in exportRoot: URL, keep: Int, fm: FileManager) {
+        guard let items = try? fm.contentsOfDirectory(
+            at: exportRoot, includingPropertiesForKeys: [.creationDateKey],
+            options: [.skipsHiddenFiles]) else { return }
+        let sorted = items.sorted { a, b in
+            let da = (try? a.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast
+            let db = (try? b.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast
+            return da > db
+        }
+        for old in sorted.dropFirst(keep) {
+            try? fm.removeItem(at: old)
+        }
+    }
+
     // MARK: - Plano B (exportação de segurança)
 
     /// Rede de segurança para quando o app vai a background: copia o pacote para
