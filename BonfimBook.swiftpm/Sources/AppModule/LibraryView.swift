@@ -35,6 +35,7 @@ struct LibraryView: View {
     @State private var newFolderName = ""
     @State private var showDiagnostics = false
     @State private var showBackupOptions = false
+    @State private var showRestore = false
     @State private var infoMessage: String?
     @State private var errorMessage: String?
 
@@ -91,6 +92,13 @@ struct LibraryView: View {
             .sheet(isPresented: boolBinding($pinPurpose)) {
                 pinSheet
             }
+            .sheet(isPresented: $showRestore) {
+                RestoreView(
+                    backup: backup,
+                    libraryRoot: rootDir ?? ((try? NotebookLibrary.defaultDirectory()) ?? URL(fileURLWithPath: NSTemporaryDirectory())),
+                    onFinished: { reload() }
+                )
+            }
     }
 
     private func withDialogs<V: View>(_ v: V) -> some View {
@@ -133,6 +141,7 @@ struct LibraryView: View {
             ) {
                 Button("Escolher pasta de backup (iCloud)") { chooseBackupFolder() }
                 Button("Fazer backup agora") { backupNow() }
+                Button("Restaurar do backup") { showRestore = true }
                 Button("Cancelar", role: .cancel) {}
             } message: {
                 Text("Guarde uma cópia de TODOS os cadernos numa pasta do iCloud Drive, fora do app. Assim, mesmo que o app seja apagado ou reinstalado, suas anotações continuam salvas.")

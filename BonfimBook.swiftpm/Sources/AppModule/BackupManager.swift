@@ -212,6 +212,86 @@ final class BackupManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Restaurar (trazer os cadernos da pasta de backup de volta)
+
+    /// Lista os nomes dos cadernos (`*.caderno`) que estão na pasta de backup escolhida.
+    /// Erro/sem pasta -> lança. Usado pela tela "Restaurar do backup".
+    func listBackupNotebooks() async throws -> [String] {
+        guard let bookmark = UserDefaults.standard.data(forKey: backupBookmarkKey) else {
+            throw BackupManager.makeError("Nenhuma pasta de backup escolhida.")
+        }
+        return try await withCheckedThrowingContinuation { cont in
+            ioQueue.async {
+                do {
+                    let (folder, _) = try BackupManager.resolveFolder(bookmark)
+                    guard folder.startAccessingSecurityScopedResource() else {
+                        throw BackupManager.makeError("Sem permissão de acesso à pasta de backup.")
+                    }
+                    defer { folder.stopAccessingSecurityScopedResource() }
+                    let items = try FileManager.default.contentsOfDirectory(
+                        at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                    let names = items
+                        .filter { $0.pathExtension == "caderno" }
+                        .map { $0.deletingPathExtension().lastPathComponent }
+                        .sorted()
+                    cont.resume(returning: names)
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Copia TODOS os cadernos da pasta de backup de volta para a biblioteca local. Nunca
+    /// sobrescreve um caderno existente — em caso de nome repetido, cria uma cópia com sufixo
+    /// "-restaurado". Devolve quantos foram restaurados.
+    func restoreAll(to libraryRoot: URL) async throws -> Int {
+        guard let bookmark = UserDefaults.standard.data(forKey: backupBookmarkKey) else {
+            throw BackupManager.makeError("Nenhuma pasta de backup escolhida.")
+        }
+        return try await withCheckedThrowingContinuation { cont in
+            ioQueue.async {
+                do {
+                    let (folder, _) = try BackupManager.resolveFolder(bookmark)
+                    guard folder.startAccessingSecurityScopedResource() else {
+                        throw BackupManager.makeError("Sem permissão de acesso à pasta de backup.")
+                    }
+                    defer { folder.stopAccessingSecurityScopedResource() }
+                    let fm = FileManager.default
+                    let items = try fm.contentsOfDirectory(
+                        at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                        .filter { $0.pathExtension == "caderno" }
+                    var restored = 0
+                    for src in items {
+                        let dest = BackupManager.uniqueDestination(
+                            for: src.lastPathComponent, in: libraryRoot, fm: fm)
+                        try fm.copyItem(at: src, to: dest)
+                        restored += 1
+                    }
+                    cont.resume(returning: restored)
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Caminho de destino que NÃO colide com um caderno já existente (evita sobrescrever).
+    nonisolated private static func uniqueDestination(for fileName: String, in dir: URL,
+                                                      fm: FileManager) -> URL {
+        let first = dir.appendingPathComponent(fileName, isDirectory: true)
+        if !fm.fileExists(atPath: first.path) { return first }
+        let base = (fileName as NSString).deletingPathExtension
+        let ext = (fileName as NSString).pathExtension
+        var i = 1
+        while true {
+            let suffix = i == 1 ? "-restaurado" : "-restaurado-\(i)"
+            let candidate = dir.appendingPathComponent("\(base)\(suffix).\(ext)", isDirectory: true)
+            if !fm.fileExists(atPath: candidate.path) { return candidate }
+            i += 1
+        }
+    }
+
     // MARK: - Plano B (exportação de segurança)
 
     /// Rede de segurança para quando o app vai a background: copia o pacote para
