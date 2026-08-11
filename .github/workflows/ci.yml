@@ -45,4 +45,7 @@ jobs:
             grep -E ": error:|: warning:" build.log | sed 's#/Users/runner/work/bonfimbook/bonfimbook/##g' | sort -u | head -100
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "===ERROS_STDOUT==="
+          grep -E ": error:|error:" build.log | sed 's#/Users/runner/work/bonfimbook/bonfimbook/##g' | sort -u | head -60
+          echo "===FIM_ERROS==="
           exit $code
