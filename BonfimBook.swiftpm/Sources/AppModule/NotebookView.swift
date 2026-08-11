@@ -83,7 +83,15 @@ struct NotebookView: View {
             // Barra fina de canetas (nossa, discreta). Some no modo imagem/estudo e quando
             // o usuário prefere a paleta flutuante completa da Apple.
             if showPenBar {
-                PenToolbarView(controller: canvasController)
+                PenToolbarView(
+                    controller: canvasController,
+                    onInsertText: { insertTextBox() },
+                    onInsertImage: { showPhotoPicker = true },
+                    onPasteImage: { pasteImage() },
+                    onAddCover: { insertCover() },
+                    onSmooth: { canvasController.smoothStrokes() },
+                    onGenerateImage: { aiPrompt = ""; showAIPrompt = true }
+                )
                 Divider()
             }
             pageArea

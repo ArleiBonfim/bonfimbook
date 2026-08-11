@@ -3,11 +3,15 @@ import PencilKit
 
 /// Tipos de "caneta" oferecidos pela nossa barra fina (mesmos traços do PencilKit).
 enum PenKind: String, CaseIterable {
-    case pen        // caneta
-    case marker     // marca-texto (destaque)
-    case pencil     // lápis
-    case eraser     // borracha (apaga o traço inteiro — "apagar rabiscando")
-    case lasso      // laço (selecionar/mover traços)
+    case pen         // caneta esferográfica
+    case marker      // marca-texto (destaque)
+    case pencil      // lápis
+    case fountainPen // caneta tinteiro (varia com a pressão)
+    case monoline    // monolinha (espessura constante)
+    case crayon      // giz de cera
+    case watercolor  // aquarela
+    case eraser      // borracha (apaga o traço inteiro — "apagar rabiscando")
+    case lasso       // laço (selecionar/mover traços)
 }
 
 /// Controlador leve de Undo/Redo do canvas de desenho.
@@ -85,6 +89,31 @@ final class CanvasController: ObservableObject {
             canvas.tool = PKInkingTool(.marker, color: color, width: max(lineWidth * 3, 14))
         case .pencil:
             canvas.tool = PKInkingTool(.pencil, color: color, width: lineWidth)
+        case .fountainPen:
+            // Canetas novas exigem iPadOS 17; em versões antigas caem num equivalente próximo.
+            if #available(iOS 17.0, *) {
+                canvas.tool = PKInkingTool(.fountainPen, color: color, width: lineWidth)
+            } else {
+                canvas.tool = PKInkingTool(.pen, color: color, width: lineWidth)
+            }
+        case .monoline:
+            if #available(iOS 17.0, *) {
+                canvas.tool = PKInkingTool(.monoline, color: color, width: lineWidth)
+            } else {
+                canvas.tool = PKInkingTool(.pen, color: color, width: lineWidth)
+            }
+        case .crayon:
+            if #available(iOS 17.0, *) {
+                canvas.tool = PKInkingTool(.crayon, color: color, width: max(lineWidth, 6))
+            } else {
+                canvas.tool = PKInkingTool(.pencil, color: color, width: max(lineWidth, 6))
+            }
+        case .watercolor:
+            if #available(iOS 17.0, *) {
+                canvas.tool = PKInkingTool(.watercolor, color: color, width: max(lineWidth * 2, 12))
+            } else {
+                canvas.tool = PKInkingTool(.marker, color: color, width: max(lineWidth * 2, 12))
+            }
         case .eraser:
             // Borracha de OBJETO: passa por cima e o traço inteiro some (apagar rabiscando).
             canvas.tool = PKEraserTool(.vector)
