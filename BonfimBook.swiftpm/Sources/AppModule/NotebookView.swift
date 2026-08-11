@@ -63,6 +63,12 @@ struct NotebookView: View {
     private static let fallbackSize = CGSize(width: 768, height: 1024)
 
     var body: some View {
+        withNotebookAlerts(withNotebookSheets(chrome))
+    }
+
+    // MARK: - Corpo quebrado em pedaços (evita "expressão complexa demais" no iPad)
+
+    private var chrome: some View {
         VStack(spacing: 0) {
             topBar
             Divider()
@@ -76,83 +82,91 @@ struct NotebookView: View {
             insertImage(data: data, ext: "png")
         }
         .onAppear(perform: reload)
-        .sheet(isPresented: $showThumbnails, onDismiss: { reload() }) {
-            PageThumbnailsView(store: store) { index in
-                goToPage(index)
-            }
-        }
-        .sheet(isPresented: $showPhotoPicker) {
-            PhotoPicker(
-                onPick: { data, ext in
-                    showPhotoPicker = false
-                    insertImage(data: data, ext: ext)
-                },
-                onCancel: { showPhotoPicker = false }
-            )
-        }
-        .sheet(item: $shareItem) { item in
-            ShareSheet(items: [item.url])
-        }
-        .sheet(isPresented: $showPDFImport) {
-            PDFDocumentPicker(
-                onPick: { data in
-                    showPDFImport = false
-                    importPDF(data: data)
-                },
-                onCancel: { showPDFImport = false }
-            )
-        }
-        .fullScreenCover(isPresented: $showScanner) {
-            DocumentScanner(
-                onFinish: { datas in
-                    showScanner = false
-                    scanDocuments(datas)
-                },
-                onCancel: { showScanner = false },
-                onError: { error in
-                    showScanner = false
-                    errorMessage = "A digitalização falhou: \(error.localizedDescription)"
+    }
+
+    private func withNotebookSheets<V: View>(_ v: V) -> some View {
+        v
+            .sheet(isPresented: $showThumbnails, onDismiss: { reload() }) {
+                PageThumbnailsView(store: store) { index in
+                    goToPage(index)
                 }
-            )
-            .ignoresSafeArea()
-        }
-        .alert("Renomear caderno", isPresented: $showRename) {
-            TextField("Nome do caderno", text: $renameText)
-            Button("Cancelar", role: .cancel) {}
-            Button("Salvar") { commitRename() }
-        } message: {
-            Text("Escolha um novo nome para este caderno.")
-        }
-        .alert("Editar texto", isPresented: $showTextEditor) {
-            TextField("Texto", text: $editingText)
-            Button("Cancelar", role: .cancel) { editingTextElementID = nil }
-            Button("Salvar") { commitTextEdit() }
-        } message: {
-            Text("Digite o texto da caixa.")
-        }
-        .alert("Gerar imagem", isPresented: $showAIPrompt) {
-            TextField("Descreva (ex.: um gato astronauta)", text: $aiPrompt)
-            Button("Cancelar", role: .cancel) {}
-            Button("Gerar") { generateOnlineImage() }
-        } message: {
-            Text("Descreva em poucas palavras. Sai em estilo desenho/clipart.")
-        }
-        .alert("Apagar esta página?", isPresented: $showDeleteConfirm) {
-            Button("Cancelar", role: .cancel) {}
-            Button("Apagar", role: .destructive) { deleteCurrentPage() }
-        } message: {
-            Text("A página vai para a lixeira do caderno e pode ser restaurada depois.")
-        }
-        .alert(
-            "Algo deu errado",
-            isPresented: Binding(get: { errorMessage != nil },
-                                 set: { if !$0 { errorMessage = nil } }),
-            presenting: errorMessage
-        ) { _ in
-            Button("OK", role: .cancel) { errorMessage = nil }
-        } message: { msg in
-            Text(msg)
-        }
+            }
+            .sheet(isPresented: $showPhotoPicker) {
+                PhotoPicker(
+                    onPick: { data, ext in
+                        showPhotoPicker = false
+                        insertImage(data: data, ext: ext)
+                    },
+                    onCancel: { showPhotoPicker = false }
+                )
+            }
+            .sheet(item: $shareItem) { item in
+                ShareSheet(items: [item.url])
+            }
+            .sheet(isPresented: $showPDFImport) {
+                PDFDocumentPicker(
+                    onPick: { data in
+                        showPDFImport = false
+                        importPDF(data: data)
+                    },
+                    onCancel: { showPDFImport = false }
+                )
+            }
+            .fullScreenCover(isPresented: $showScanner) {
+                DocumentScanner(
+                    onFinish: { datas in
+                        showScanner = false
+                        scanDocuments(datas)
+                    },
+                    onCancel: { showScanner = false },
+                    onError: { error in
+                        showScanner = false
+                        errorMessage = "A digitalização falhou: \(error.localizedDescription)"
+                    }
+                )
+                .ignoresSafeArea()
+            }
+    }
+
+    private func withNotebookAlerts<V: View>(_ v: V) -> some View {
+        v
+            .alert("Renomear caderno", isPresented: $showRename) {
+                TextField("Nome do caderno", text: $renameText)
+                Button("Cancelar", role: .cancel) {}
+                Button("Salvar") { commitRename() }
+            } message: {
+                Text("Escolha um novo nome para este caderno.")
+            }
+            .alert("Editar texto", isPresented: $showTextEditor) {
+                TextField("Texto", text: $editingText)
+                Button("Cancelar", role: .cancel) { editingTextElementID = nil }
+                Button("Salvar") { commitTextEdit() }
+            } message: {
+                Text("Digite o texto da caixa.")
+            }
+            .alert("Gerar imagem", isPresented: $showAIPrompt) {
+                TextField("Descreva (ex.: um gato astronauta)", text: $aiPrompt)
+                Button("Cancelar", role: .cancel) {}
+                Button("Gerar") { generateOnlineImage() }
+            } message: {
+                Text("Descreva em poucas palavras. Sai em estilo desenho/clipart.")
+            }
+            .alert("Apagar esta página?", isPresented: $showDeleteConfirm) {
+                Button("Cancelar", role: .cancel) {}
+                Button("Apagar", role: .destructive) { deleteCurrentPage() }
+            } message: {
+                Text("A página vai para a lixeira do caderno e pode ser restaurada depois.")
+            }
+            .alert(
+                "Algo deu errado",
+                isPresented: Binding(get: { errorMessage != nil },
+                                     set: { if !$0 { errorMessage = nil } }),
+                presenting: errorMessage
+            ) { _ in
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: { msg in
+                Text(msg)
+            }
     }
 
     // MARK: - Página atual

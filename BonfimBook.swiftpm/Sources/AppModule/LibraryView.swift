@@ -57,75 +57,99 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            content
-                .navigationTitle(screenTitle)
-                .navigationBarTitleDisplayMode(.large)
-                .toolbar { toolbarContent }
-                .navigationDestination(for: URL.self) { url in
-                    notebookDestination(for: url)
-                }
-                .sheet(isPresented: $showDiagnostics) {
-                    PenDiagnosticView()
-                }
-                .sheet(isPresented: boolBinding($pinPurpose)) {
-                    pinSheet
-                }
-                .confirmationDialog(
-                    "Apagar este caderno?",
-                    isPresented: boolBinding($pendingDelete),
-                    titleVisibility: .visible,
-                    presenting: pendingDelete
-                ) { ref in
-                    Button("Apagar \u{201C}\(ref.title)\u{201D}", role: .destructive) { delete(ref) }
-                    Button("Cancelar", role: .cancel) { pendingDelete = nil }
-                } message: { ref in
-                    Text("O caderno \u{201C}\(ref.title)\u{201D} vai para a lixeira. Você poderá recuperá-lo depois.")
-                }
-                .confirmationDialog(
-                    "Apagar esta pasta?",
-                    isPresented: boolBinding($pendingFolderDelete),
-                    titleVisibility: .visible,
-                    presenting: pendingFolderDelete
-                ) { folder in
-                    Button("Apagar \u{201C}\(folder.name)\u{201D}", role: .destructive) { deleteFolder(folder) }
-                    Button("Cancelar", role: .cancel) { pendingFolderDelete = nil }
-                } message: { folder in
-                    Text("A pasta \u{201C}\(folder.name)\u{201D} e tudo dentro dela vai para a lixeira.")
-                }
-                .confirmationDialog(
-                    "Mover para qual pasta?",
-                    isPresented: boolBinding($pendingMove),
-                    titleVisibility: .visible,
-                    presenting: pendingMove
-                ) { ref in
-                    moveTargets(for: ref)
-                    Button("Cancelar", role: .cancel) { pendingMove = nil }
-                }
-                .alert("Renomear caderno", isPresented: boolBinding($pendingRename)) {
-                    TextField("Nome do caderno", text: $renameText)
-                    Button("Cancelar", role: .cancel) { pendingRename = nil }
-                    Button("Salvar") { renameConfirmed() }
-                } message: {
-                    Text("Escolha um novo nome para este caderno.")
-                }
-                .alert("Nova pasta", isPresented: $showNewFolder) {
-                    TextField("Nome da pasta", text: $newFolderName)
-                    Button("Cancelar", role: .cancel) {}
-                    Button("Criar") { createFolder() }
-                } message: {
-                    Text("Dê um nome para a nova pasta.")
-                }
-                .alert(
-                    "Algo deu errado",
-                    isPresented: boolBinding($errorMessage),
-                    presenting: errorMessage
-                ) { _ in
-                    Button("OK", role: .cancel) { errorMessage = nil }
-                } message: { msg in
-                    Text(msg)
-                }
-                .onAppear(perform: reload)
+            base
         }
+    }
+
+    // MARK: - Corpo quebrado em pedaços (evita "expressão complexa demais" no iPad)
+
+    /// Conteúdo + navegação + diálogos, montados em camadas pequenas para o compilador do
+    /// Swift Playgrounds não estourar o tempo de checagem de tipos.
+    private var base: some View {
+        withAlerts(withDialogs(withSheets(navigatedContent)))
+    }
+
+    private var navigatedContent: some View {
+        content
+            .navigationTitle(screenTitle)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar { toolbarContent }
+            .navigationDestination(for: URL.self) { url in
+                notebookDestination(for: url)
+            }
+            .onAppear(perform: reload)
+    }
+
+    private func withSheets<V: View>(_ v: V) -> some View {
+        v
+            .sheet(isPresented: $showDiagnostics) {
+                PenDiagnosticView()
+            }
+            .sheet(isPresented: boolBinding($pinPurpose)) {
+                pinSheet
+            }
+    }
+
+    private func withDialogs<V: View>(_ v: V) -> some View {
+        v
+            .confirmationDialog(
+                "Apagar este caderno?",
+                isPresented: boolBinding($pendingDelete),
+                titleVisibility: .visible,
+                presenting: pendingDelete
+            ) { ref in
+                Button("Apagar \u{201C}\(ref.title)\u{201D}", role: .destructive) { delete(ref) }
+                Button("Cancelar", role: .cancel) { pendingDelete = nil }
+            } message: { ref in
+                Text("O caderno \u{201C}\(ref.title)\u{201D} vai para a lixeira. Você poderá recuperá-lo depois.")
+            }
+            .confirmationDialog(
+                "Apagar esta pasta?",
+                isPresented: boolBinding($pendingFolderDelete),
+                titleVisibility: .visible,
+                presenting: pendingFolderDelete
+            ) { folder in
+                Button("Apagar \u{201C}\(folder.name)\u{201D}", role: .destructive) { deleteFolder(folder) }
+                Button("Cancelar", role: .cancel) { pendingFolderDelete = nil }
+            } message: { folder in
+                Text("A pasta \u{201C}\(folder.name)\u{201D} e tudo dentro dela vai para a lixeira.")
+            }
+            .confirmationDialog(
+                "Mover para qual pasta?",
+                isPresented: boolBinding($pendingMove),
+                titleVisibility: .visible,
+                presenting: pendingMove
+            ) { ref in
+                moveTargets(for: ref)
+                Button("Cancelar", role: .cancel) { pendingMove = nil }
+            }
+    }
+
+    private func withAlerts<V: View>(_ v: V) -> some View {
+        v
+            .alert("Renomear caderno", isPresented: boolBinding($pendingRename)) {
+                TextField("Nome do caderno", text: $renameText)
+                Button("Cancelar", role: .cancel) { pendingRename = nil }
+                Button("Salvar") { renameConfirmed() }
+            } message: {
+                Text("Escolha um novo nome para este caderno.")
+            }
+            .alert("Nova pasta", isPresented: $showNewFolder) {
+                TextField("Nome da pasta", text: $newFolderName)
+                Button("Cancelar", role: .cancel) {}
+                Button("Criar") { createFolder() }
+            } message: {
+                Text("Dê um nome para a nova pasta.")
+            }
+            .alert(
+                "Algo deu errado",
+                isPresented: boolBinding($errorMessage),
+                presenting: errorMessage
+            ) { _ in
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: { msg in
+                Text(msg)
+            }
     }
 
     // MARK: - Conteúdo
