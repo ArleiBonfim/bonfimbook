@@ -148,6 +148,34 @@ final class LibraryAndTemplateTests: CadernoTestCase {
         XCTAssertEqual(refs.first?.title, "Bom")
     }
 
+    // MARK: - Pastas (criar / listar / mover caderno)
+
+    func test_folders_createListAndMoveNotebook() throws {
+        // Cria uma pasta na raiz.
+        let folderURL = try NotebookLibrary.createFolder(in: tempDir, name: "Trabalho")
+        XCTAssertEqual(try NotebookLibrary.listFolders(in: tempDir).map(\.name), ["Trabalho"])
+
+        // Cria um caderno na raiz.
+        let store = try NotebookLibrary.create(in: tempDir, title: "Mover", coverColorHex: nil)
+        XCTAssertEqual(try NotebookLibrary.list(in: tempDir).count, 1)
+
+        // Move o caderno para dentro da pasta.
+        let newURL = try NotebookLibrary.move(store.packageURL, to: folderURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newURL.path))
+
+        // Raiz não tem mais cadernos; a pasta tem 1.
+        XCTAssertEqual(try NotebookLibrary.list(in: tempDir).count, 0)
+        XCTAssertEqual(try NotebookLibrary.list(in: folderURL).count, 1)
+
+        // Um pacote .caderno NÃO é contado como pasta.
+        XCTAssertEqual(try NotebookLibrary.listFolders(in: folderURL).count, 0)
+
+        // Criar pasta com nome repetido não colide (ganha sufixo).
+        let dup = try NotebookLibrary.createFolder(in: tempDir, name: "Trabalho")
+        XCTAssertNotEqual(dup.lastPathComponent, "Trabalho")
+        XCTAssertEqual(try NotebookLibrary.listFolders(in: tempDir).count, 2)
+    }
+
     // MARK: - 4. setTemplate persiste
 
     func test_setTemplate_persists() throws {
