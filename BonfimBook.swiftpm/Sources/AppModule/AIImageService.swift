@@ -30,7 +30,7 @@ enum AIImageService {
     /// uma IA antes de gerar — resolve muito o "saiu nada a ver") e o modelo `flux` (o de
     /// melhor qualidade), em resolução 1024.
     static func generate(prompt: String,
-                         style: String = "in the style of a simple, cute, flat clipart illustration, clean bold lines, minimal, high quality",
+                         style: String = "detailed vector sticker illustration, vibrant colors, thick clean outline, soft shadow, high quality, centered, white background",
                          size: Int = 1024) async throws -> Data {
         // O modelo entende MUITO melhor em inglês. Traduzimos/reescrevemos o pedido do usuário
         // (que pode estar em português) para um prompt curto em inglês antes de gerar. Se a
