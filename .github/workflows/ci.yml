@@ -11,7 +11,7 @@ on:
 jobs:
   # PORTÃO DE QUALIDADE (bloqueia): compila e testa a biblioteca pura CadernoCore.
   test:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Versao do Swift (diagnostico)
@@ -23,10 +23,12 @@ jobs:
   # continue-on-error deixa o portao principal verde mesmo se isto falhar; os logs deste
   # job sao a janela para erros de compilacao do AppModule.
   smoke-app:
-    runs-on: macos-14
+    runs-on: macos-15
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Versao do Xcode/SDKs (diagnostico)
+        run: xcodebuild -version && xcodebuild -showsdks | grep -i ios || true
       - name: Listar schemes disponiveis
         working-directory: BonfimBook.swiftpm
         run: xcodebuild -list || true

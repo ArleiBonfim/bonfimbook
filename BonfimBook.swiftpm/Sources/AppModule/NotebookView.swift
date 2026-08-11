@@ -53,6 +53,11 @@ struct NotebookView: View {
     @State private var showTextEditor = false
     @State private var shareItem: ShareItem?
     @State private var errorMessage: String?
+    // Geração de imagem por IA.
+    @State private var showAIPrompt = false
+    @State private var aiPrompt = ""
+    @State private var isGenerating = false
+    @State private var showAppleGen = false
 
     // Dimensões lógicas de referência quando ainda não sabemos o tamanho real da tela.
     private static let fallbackSize = CGSize(width: 768, height: 1024)
@@ -66,6 +71,10 @@ struct NotebookView: View {
             bottomBar
         }
         .navigationBarHidden(true)
+        .overlay { if isGenerating { generatingOverlay } }
+        .appleImagePlaygroundSheet(isPresented: $showAppleGen, seed: "") { data in
+            insertImage(data: data, ext: "png")
+        }
         .onAppear(perform: reload)
         .sheet(isPresented: $showThumbnails, onDismiss: { reload() }) {
             PageThumbnailsView(store: store) { index in
@@ -120,6 +129,13 @@ struct NotebookView: View {
             Button("Salvar") { commitTextEdit() }
         } message: {
             Text("Digite o texto da caixa.")
+        }
+        .alert("Gerar imagem", isPresented: $showAIPrompt) {
+            TextField("Descreva (ex.: um gato astronauta)", text: $aiPrompt)
+            Button("Cancelar", role: .cancel) {}
+            Button("Gerar") { generateOnlineImage() }
+        } message: {
+            Text("Descreva em poucas palavras. Sai em estilo desenho/clipart.")
         }
         .alert("Apagar esta página?", isPresented: $showDeleteConfirm) {
             Button("Cancelar", role: .cancel) {}
@@ -331,6 +347,23 @@ struct NotebookView: View {
                 canvasController.smoothStrokes()
             } label: {
                 Label("Melhorar traço (suavizar)", systemImage: "wand.and.stars")
+            }
+
+            Divider()
+
+            Button {
+                aiPrompt = ""
+                showAIPrompt = true
+            } label: {
+                Label("Gerar imagem (online grátis)", systemImage: "globe")
+            }
+
+            if appleImageGenAvailable {
+                Button {
+                    showAppleGen = true
+                } label: {
+                    Label("Gerar imagem no iPad (Apple)", systemImage: "sparkles")
+                }
             }
 
             Divider()
@@ -697,6 +730,42 @@ struct NotebookView: View {
             insertImage(data: data, ext: "png")
         } else {
             errorMessage = "Não encontrei imagem copiada. Copie uma imagem (ex.: no Safari, segure a imagem → Copiar) e tente de novo."
+        }
+    }
+
+    /// Gera uma imagem pelo serviço grátis online e a insere na página (em segundo plano,
+    /// mostrando um aviso enquanto gera).
+    private func generateOnlineImage() {
+        let prompt = aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+        isGenerating = true
+        Task {
+            do {
+                let data = try await AIImageService.generate(prompt: prompt)
+                await MainActor.run {
+                    isGenerating = false
+                    insertImage(data: data, ext: "jpg")
+                }
+            } catch {
+                await MainActor.run {
+                    isGenerating = false
+                    errorMessage = "Não consegui gerar a imagem: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Cobertura translúcida com "Gerando imagem…" enquanto a IA trabalha.
+    private var generatingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.25).ignoresSafeArea()
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Gerando imagem…")
+                    .font(.subheadline)
+            }
+            .padding(24)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
     }
 }
