@@ -63,6 +63,7 @@ struct NotebookView: View {
     @State private var isOrganizing = false
     @State private var organizeText = ""
     @State private var showOrganizeResult = false
+    @State private var isRemovingBG = false
 
     // Dimensões lógicas de referência quando ainda não sabemos o tamanho real da tela.
     private static let fallbackSize = CGSize(width: 768, height: 1024)
@@ -229,7 +230,8 @@ struct NotebookView: View {
                         elements: $elements,
                         selectedElementID: $selectedElementID,
                         onCommit: { newElements in persistElements(newElements) },
-                        onEditText: { element in beginEditText(element) }
+                        onEditText: { element in beginEditText(element) },
+                        onRemoveBackground: { element in removeBackground(for: element) }
                     )
                     .allowsHitTesting(imageEditMode)
 
@@ -798,6 +800,7 @@ struct NotebookView: View {
     private var busyMessage: String? {
         if isGenerating { return "Gerando imagem…" }
         if isOrganizing { return "Organizando…" }
+        if isRemovingBG { return "Removendo fundo…" }
         return nil
     }
 
@@ -869,6 +872,45 @@ struct NotebookView: View {
             }
         }
         return parts.joined(separator: "\n")
+    }
+
+    /// Remove o fundo da imagem selecionada (no próprio iPad) e troca o asset pela versão
+    /// com fundo transparente. Roda fora da main thread (é pesado).
+    private func removeBackground(for element: PageElement) {
+        guard element.kind == .image else { return }
+        guard #available(iOS 17.0, *) else {
+            errorMessage = "Remover fundo precisa de iPadOS 17 ou mais novo."
+            return
+        }
+        let assetURL = store.assetFileURL(id: element.assetID)
+        let elementID = element.id
+        isRemovingBG = true
+        Task {
+            let png: Data? = await Task.detached(priority: .userInitiated) {
+                guard let img = UIImage(contentsOfFile: assetURL.path) else { return nil }
+                if #available(iOS 17.0, *) {
+                    return BackgroundRemover.removeBackground(from: img)?.pngData()
+                }
+                return nil
+            }.value
+
+            await MainActor.run {
+                isRemovingBG = false
+                guard let png = png else {
+                    errorMessage = "Não consegui separar o objeto do fundo nesta imagem."
+                    return
+                }
+                do {
+                    let newAsset = try store.saveAsset(png, preferredExtension: "png")
+                    if let idx = elements.firstIndex(where: { $0.id == elementID }) {
+                        elements[idx].assetID = newAsset
+                        persistElements(elements)
+                    }
+                } catch {
+                    errorMessage = "Não consegui salvar a imagem sem fundo: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 
     /// Cria uma página nova com o texto organizado dentro de uma caixa de texto.

@@ -19,6 +19,8 @@ struct PageImageLayerView: View {
     var onCommit: ([PageElement]) -> Void
     /// Pedido para editar o texto de uma caixa de texto (a tela do caderno abre o editor).
     var onEditText: (PageElement) -> Void
+    /// Pedido para remover o fundo de uma imagem (a tela do caderno processa e troca o asset).
+    var onRemoveBackground: (PageElement) -> Void
 
     var body: some View {
         // ZStack sem tamanho próprio: cada filho se posiciona por conta própria via
@@ -57,7 +59,8 @@ struct PageImageLayerView: View {
                         }
                         onCommit(elements)
                     },
-                    onEdit: { onEditText(element) }
+                    onEdit: { onEditText(element) },
+                    onRemoveBackground: { onRemoveBackground(element) }
                 )
             }
         }
@@ -98,6 +101,7 @@ private struct ImageElementView: View {
     var onMove: (Double, Double) -> Void    // (novoX, novoY) em topo-esquerda
     var onResize: (Double, Double) -> Void  // (novaLargura, novaAltura)
     var onEdit: () -> Void                  // editar o texto (só caixas de texto)
+    var onRemoveBackground: () -> Void      // remover o fundo (só imagens)
 
     /// Deslocamento em curso do arraste (some ao terminar). Só o selecionado arrasta.
     @State private var dragOffset: CGSize = .zero
@@ -159,6 +163,22 @@ private struct ImageElementView: View {
         .overlay(alignment: .topTrailing) {
             if isSelected && element.kind == .text { editButton }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if isSelected && element.kind == .image { removeBGButton }
+        }
+    }
+
+    /// Botão "tirar fundo" (só em imagens selecionadas), canto inferior-direito.
+    private var removeBGButton: some View {
+        Button(action: onRemoveBackground) {
+            Image(systemName: "scissors")
+                .font(.caption)
+                .foregroundStyle(.white)
+                .padding(7)
+                .background(.blue, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .offset(x: 10, y: 10)
     }
 
     /// Botão de editar o texto (só aparece em caixas de texto selecionadas), canto superior-direito.
