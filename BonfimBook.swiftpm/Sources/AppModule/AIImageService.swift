@@ -36,14 +36,14 @@ enum AIImageService {
         // (que pode estar em português) para um prompt curto em inglês antes de gerar. Se a
         // tradução falhar, seguimos com o texto original (pior caso, mas ainda funciona).
         let base = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let english = await toEnglishImagePrompt(base) ?? base
+        let english = await translateToEnglish(base) ?? base
         let full = english + ", " + style
 
         // Codifica o texto para caber no caminho da URL (sem "/", "?", "#").
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
         let encoded = full.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         let urlString = "https://image.pollinations.ai/prompt/\(encoded)"
-            + "?width=\(size)&height=\(size)&model=flux&enhance=true&nologo=true"
+            + "?width=\(size)&height=\(size)&model=flux&nologo=true"
 
         guard let url = URL(string: urlString) else { throw AIError.badURL }
 
@@ -58,18 +58,20 @@ enum AIImageService {
         return data
     }
 
-    /// Usa o serviço grátis de TEXTO para traduzir/reescrever o pedido (ex.: "coroa de rei")
-    /// num prompt curto em inglês ("a golden king's crown, ..."). Retorna nil se falhar.
-    private static func toEnglishImagePrompt(_ text: String) async -> String? {
-        guard !text.isEmpty else { return nil }
-        let instruction =
-        "Translate and rewrite the following into a short English prompt to generate a simple, "
-        + "cute, flat clipart illustration. Reply with ONLY the prompt, no quotes, no explanation.\n\n"
-        + text
+    /// Resposta do MyMemory (tradutor grátis, sem chave).
+    private struct MyMemoryResponse: Decodable {
+        struct ResponseData: Decodable { let translatedText: String }
+        let responseData: ResponseData
+    }
 
-        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
-        guard let encoded = instruction.addingPercentEncoding(withAllowedCharacters: allowed),
-              let url = URL(string: "https://text.pollinations.ai/\(encoded)") else {
+    /// Traduz o texto de português para inglês usando o MyMemory (grátis, sem cadastro). O
+    /// modelo de imagem entende MUITO melhor em inglês; traduzir aqui é o que faz "coroa de
+    /// rei" virar uma coroa de verdade. Retorna nil se falhar (aí seguimos com o original).
+    private static func translateToEnglish(_ text: String) async -> String? {
+        guard !text.isEmpty else { return nil }
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+="))
+        guard let q = text.addingPercentEncoding(withAllowedCharacters: allowed),
+              let url = URL(string: "https://api.mymemory.translated.net/get?q=\(q)&langpair=pt%7Cen") else {
             return nil
         }
         var request = URLRequest(url: url)
@@ -77,16 +79,11 @@ enum AIImageService {
 
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              let raw = String(data: data, encoding: .utf8) else {
+              let decoded = try? JSONDecoder().decode(MyMemoryResponse.self, from: data) else {
             return nil
         }
-        // Limpa aspas/linhas extras que o modelo às vezes devolve.
-        let cleaned = raw
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\"", with: "")
-        // Se veio vazio ou absurdamente longo (erro do serviço), descarta.
-        guard !cleaned.isEmpty, cleaned.count < 400 else { return nil }
-        return cleaned
+        let translated = decoded.responseData.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return translated.isEmpty ? nil : translated
     }
 }
 
