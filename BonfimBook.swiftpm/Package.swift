@@ -26,8 +26,8 @@ let package = Package(
             // Swift Playgrounds não exige conta paga; o Playgrounds preenche a assinatura.
             displayVersion: "0.1",
             bundleVersion: "1",
-            // Ícone do app: imagem "AppIcon" no catálogo Assets.xcassets (o "BF" em degradê).
-            iconAssetName: "AppIcon",
+            // Ícone do app: imagem "AppIcon" no catálogo Assets.xcassets (o "BF" verde).
+            appIcon: .asset("AppIcon"),
             accentColor: .presetColor(.indigo),
             supportedDeviceFamilies: [
                 .pad
