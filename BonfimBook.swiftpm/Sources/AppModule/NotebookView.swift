@@ -327,6 +327,12 @@ struct NotebookView: View {
                 Label("Inserir caixa de texto", systemImage: "textbox")
             }
 
+            Button {
+                canvasController.smoothStrokes()
+            } label: {
+                Label("Melhorar traço (suavizar)", systemImage: "wand.and.stars")
+            }
+
             Divider()
 
             Button {
