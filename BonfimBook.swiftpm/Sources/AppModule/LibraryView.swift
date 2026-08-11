@@ -24,6 +24,10 @@ struct LibraryView: View {
     /// Caderno aguardando confirmação de exclusão (nil = nenhum).
     @State private var pendingDelete: NotebookRef?
 
+    /// Caderno sendo renomeado (nil = nenhum) e o texto em edição.
+    @State private var pendingRename: NotebookRef?
+    @State private var renameText: String = ""
+
     /// Controla a folha do diagnóstico da caneta.
     @State private var showDiagnostics = false
 
@@ -66,6 +70,19 @@ struct LibraryView: View {
                 Button("Cancelar", role: .cancel) { pendingDelete = nil }
             } message: { ref in
                 Text("O caderno \u{201C}\(ref.title)\u{201D} vai para a lixeira. Você poderá recuperá-lo depois.")
+            }
+            .alert(
+                "Renomear caderno",
+                isPresented: Binding(
+                    get: { pendingRename != nil },
+                    set: { if !$0 { pendingRename = nil } }
+                )
+            ) {
+                TextField("Nome do caderno", text: $renameText)
+                Button("Cancelar", role: .cancel) { pendingRename = nil }
+                Button("Salvar") { renameConfirmed() }
+            } message: {
+                Text("Escolha um novo nome para este caderno.")
             }
             .alert(
                 "Algo deu errado",
@@ -119,6 +136,12 @@ struct LibraryView: View {
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
+                        Button {
+                            renameText = ref.title
+                            pendingRename = ref
+                        } label: {
+                            Label("Renomear", systemImage: "pencil")
+                        }
                         Button(role: .destructive) {
                             pendingDelete = ref
                         } label: {
@@ -223,6 +246,19 @@ struct LibraryView: View {
             reload()
         } catch {
             errorMessage = "Não foi possível apagar o caderno: \(error.localizedDescription)"
+        }
+    }
+
+    /// Renomeia o caderno pendente (só o título no manifest) e recarrega a lista.
+    private func renameConfirmed() {
+        guard let ref = pendingRename else { return }
+        pendingRename = nil
+        do {
+            let store = try NotebookStore.open(packageURL: ref.url)
+            try store.setTitle(renameText)
+            reload()
+        } catch {
+            errorMessage = "Não foi possível renomear o caderno: \(error.localizedDescription)"
         }
     }
 

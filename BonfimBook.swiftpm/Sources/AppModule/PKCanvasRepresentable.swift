@@ -12,9 +12,11 @@ struct PKCanvasRepresentable: UIViewRepresentable {
     let backup: BackupManager
     let pageID: String
     @Binding var drawingPolicy: PKCanvasViewDrawingPolicy
+    /// Controlador de Undo/Redo (e ancoragem do zoom). Injetado pelo integrador.
+    let controller: CanvasController
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(store: store, backup: backup, pageID: pageID)
+        Coordinator(store: store, backup: backup, pageID: pageID, controller: controller)
     }
 
     func makeUIView(context: Context) -> PKCanvasView {
@@ -22,7 +24,23 @@ struct PKCanvasRepresentable: UIViewRepresentable {
         canvas.delegate = context.coordinator
         canvas.drawingPolicy = drawingPolicy
         canvas.alwaysBounceVertical = false
-        canvas.backgroundColor = .systemBackground
+        // Fundo transparente para o PaperBackgroundView (o papel) aparecer atrás.
+        // Nunca `.systemBackground` — ficaria preto no dark mode (ver CONTRACT gotchas).
+        canvas.backgroundColor = .clear
+        canvas.isOpaque = false
+
+        // Habilita pinça-para-zoom do desenho. `PKCanvasView` é subclasse de
+        // `UIScrollView`, então basta configurar a escala mínima/máxima e o "bounce".
+        canvas.minimumZoomScale = 1.0
+        canvas.maximumZoomScale = 4.0
+        canvas.bouncesZoom = true
+
+        // Liga a referência fraca do controlador ao canvas. Feito na main thread porque
+        // o controlador é `ObservableObject` observado pela UI.
+        let controller = self.controller
+        DispatchQueue.main.async {
+            controller.canvas = canvas
+        }
 
         // Carga inicial: bytes opacos → PKDrawing. `nil` = página ainda sem traço.
         // `try?` sobre uma função que devolve `Data?` já entrega `Data?` (Swift achata o
@@ -39,6 +57,10 @@ struct PKCanvasRepresentable: UIViewRepresentable {
         context.coordinator.toolPicker = toolPicker
         DispatchQueue.main.async {
             canvas.becomeFirstResponder()
+        }
+        // Estado inicial dos botões desfazer/refazer (na main thread).
+        DispatchQueue.main.async {
+            controller.refresh()
         }
 
         return canvas
@@ -63,6 +85,7 @@ struct PKCanvasRepresentable: UIViewRepresentable {
         private let store: NotebookStore
         private let backup: BackupManager
         private let pageID: String
+        private let controller: CanvasController
         var toolPicker: PKToolPicker?
 
         /// Fila SERIAL de background: as gravações não competem com a main thread
@@ -70,10 +93,11 @@ struct PKCanvasRepresentable: UIViewRepresentable {
         private let saveQueue = DispatchQueue(label: "br.pessoal.caderno.save", qos: .utility)
         private var pendingWork: DispatchWorkItem?
 
-        init(store: NotebookStore, backup: BackupManager, pageID: String) {
+        init(store: NotebookStore, backup: BackupManager, pageID: String, controller: CanvasController) {
             self.store = store
             self.backup = backup
             self.pageID = pageID
+            self.controller = controller
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
@@ -81,6 +105,13 @@ struct PKCanvasRepresentable: UIViewRepresentable {
             // pesada para a fila de background com debounce.
             let data = canvasView.drawing.dataRepresentation()
             scheduleSave(data)
+
+            // Depois de agendar o salvamento (sem mexer nele), reavalia desfazer/refazer.
+            // Capturamos `self` fraco de forma EXPLÍCITA na lista de captura: referenciar
+            // um `self` capturado por `var` dentro de closure concorrente não compila.
+            DispatchQueue.main.async { [weak self] in
+                self?.controller.refresh()
+            }
         }
 
         private func scheduleSave(_ data: Data) {

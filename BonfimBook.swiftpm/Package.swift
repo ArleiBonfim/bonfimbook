@@ -36,10 +36,14 @@ let package = Package(
                 .portrait,
                 .landscapeLeft,
                 .landscapeRight
+            ],
+            // CÂMERA: necessária só para "Digitalizar documento" (scanner). A permissão é
+            // pedida ao ABRIR o scanner, não no launch — logo não afeta a inicialização do
+            // app. NÃO declaramos microfone/fala (foi o que causou crash histórico); só a
+            // câmera, com uma frase de propósito clara ao usuário.
+            capabilities: [
+                .camera(purposeString: "Usada para digitalizar documentos direto para o seu caderno.")
             ]
-            // SEM `capabilities:` nesta fase. Nada de câmera/microfone/reconhecimento de
-            // fala — isso evita o crash histórico de permissão de microfone. Essas
-            // capacidades só entram na fase 4.
         )
     ],
     targets: [

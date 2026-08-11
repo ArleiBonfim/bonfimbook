@@ -6,6 +6,10 @@ import Foundation
 public enum PaperTemplate: String, CaseIterable, Codable {
     case blank, ruled, grid, dotted, cornell
 
+    /// Papel padrão de páginas/cadernos novos. Centralizado aqui: mudar só esta linha muda
+    /// o padrão em todo o app (motor, UI e testes referenciam este valor).
+    public static let defaultTemplate: PaperTemplate = .grid
+
     public var displayName: String {
         switch self {
         case .blank: return "Liso"

@@ -155,8 +155,8 @@ final class LibraryAndTemplateTests: CadernoTestCase {
         let pageID = try XCTUnwrap(try store.pages().first?.id,
                                    "Deveria existir a página inicial.")
 
-        // Página nasce "blank".
-        XCTAssertEqual(try store.pageMeta(id: pageID).template, "blank")
+        // Página nasce com o papel padrão do app.
+        XCTAssertEqual(try store.pageMeta(id: pageID).template, PaperTemplate.defaultTemplate.rawValue)
 
         let before = try store.loadManifest().updatedAt
 

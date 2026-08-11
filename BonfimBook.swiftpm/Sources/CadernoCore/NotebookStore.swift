@@ -44,7 +44,10 @@ public final class NotebookStore {
     // MARK: - Criar / Abrir
 
     /// Cria um novo pacote `.caderno` dentro de `parentDirectory`, já com 1 página em branco.
-    public static func create(at parentDirectory: URL, title: String) throws -> NotebookStore {
+    /// `coverColorHex` (opcional, no fim) grava a cor da capa no manifest; a assinatura antiga
+    /// `create(at:title:)` continua válida pelo default nil.
+    public static func create(at parentDirectory: URL, title: String,
+                              coverColorHex: String? = nil) throws -> NotebookStore {
         let url = packageURL(in: parentDirectory, title: title)
         let fm = FileManager.default
 
@@ -79,11 +82,12 @@ public final class NotebookStore {
                                 title: title,
                                 createdAt: now,
                                 updatedAt: now,
-                                pageOrder: [])
+                                pageOrder: [],
+                                coverColorHex: coverColorHex)
         try store.saveManifest(manifest)
 
-        // Primeira página em branco (reusa a lógica normal, mantém invariantes).
-        _ = try store.addPage(template: "blank")
+        // Primeira página com o papel padrão (reusa a lógica normal, mantém invariantes).
+        _ = try store.addPage(template: PaperTemplate.defaultTemplate.rawValue)
 
         return store
     }
@@ -142,14 +146,16 @@ public final class NotebookStore {
 
     // MARK: - Mutação de páginas
 
-    /// Acrescenta uma página em branco ao fim e atualiza o manifest.
+    /// Acrescenta uma página ao fim e atualiza o manifest. `background` (opcional) define um
+    /// fundo importado (página de PDF ou imagem escaneada); nil = papel normal do template.
     @discardableResult
-    public func addPage(template: String) throws -> PageMeta {
+    public func addPage(template: String, background: PageBackground? = nil) throws -> PageMeta {
         lock.lock(); defer { lock.unlock() }
         var manifest = try loadManifest()
 
         let now = Date()
-        let meta = PageMeta(id: UUID().uuidString, createdAt: now, updatedAt: now, template: template)
+        let meta = PageMeta(id: UUID().uuidString, createdAt: now, updatedAt: now,
+                            template: template, background: background)
 
         // Ordem: escreve a meta ANTES de referenciá-la no pageOrder. Se falhar no meio,
         // sobra um arquivo órfão (detectável por verifyIntegrity), nunca um id sem arquivo.
@@ -258,6 +264,154 @@ public final class NotebookStore {
         manifest.pageOrder.insert(id, at: clamped)
         manifest.updatedAt = Date()
         try saveManifest(manifest)
+    }
+
+    /// Troca o estilo de papel de uma página (grava `PageMeta.template` como String) e
+    /// carimba `updatedAt` na página e no manifest. Mesmo padrão atômico de `writeDrawing`.
+    public func setTemplate(_ template: String, pageID: String) throws {
+        lock.lock(); defer { lock.unlock() }
+
+        // Exige que a página exista (readPageMeta lança .notFound caso contrário).
+        var meta = try readPageMeta(pageID)
+
+        let now = Date()
+        meta.template = template
+        meta.updatedAt = now
+        try writeJSON(meta, to: pageMetaURL(pageID))
+
+        // Manifest também é carimbado (para backup/sync saberem que algo mudou).
+        var manifest = try loadManifest()
+        manifest.updatedAt = now
+        try saveManifest(manifest)
+    }
+
+    /// Atualiza a cor da capa no manifest (`nil` volta ao padrão) e carimba `updatedAt`.
+    public func setCoverColor(_ hex: String?) throws {
+        lock.lock(); defer { lock.unlock() }
+        var manifest = try loadManifest()
+        manifest.coverColorHex = hex
+        manifest.updatedAt = Date()
+        try saveManifest(manifest)
+    }
+
+    /// Renomeia o caderno. Só troca `title` no manifest — o ARQUIVO do pacote NÃO é
+    /// renomeado de propósito: a URL do pacote é usada pela navegação e pelos bookmarks de
+    /// backup, e o título exibido sempre vem do manifest. Título vazio é ignorado (mantém o
+    /// anterior) para nunca deixar um caderno sem nome.
+    public func setTitle(_ title: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        var manifest = try loadManifest()
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        manifest.title = trimmed
+        manifest.updatedAt = Date()
+        try saveManifest(manifest)
+    }
+
+    /// Duplica a página `id`, inserindo a cópia LOGO APÓS ela. Copia os metadados (novo id e
+    /// datas), o traço (arquivo `.drawing`, se existir) e a lista de objetos/imagens — os
+    /// assets em `assets/` são COMPARTILHADOS pela referência (nunca apagamos assets, então
+    /// compartilhar é seguro e evita duplicar bytes de foto). Devolve a nova `PageMeta`.
+    @discardableResult
+    public func duplicatePage(id: String) throws -> PageMeta {
+        lock.lock(); defer { lock.unlock() }
+        var manifest = try loadManifest()
+        guard let idx = manifest.pageOrder.firstIndex(of: id) else {
+            throw CadernoError.notFound("página \(id) não está no pageOrder")
+        }
+        let source = try readPageMeta(id)
+
+        let now = Date()
+        let copy = PageMeta(id: UUID().uuidString,
+                            createdAt: now,
+                            updatedAt: now,
+                            template: source.template,
+                            elements: source.elements,
+                            background: source.background)
+
+        // Metadados primeiro (mesma ordem defensiva de addPage: nunca um id sem arquivo).
+        try writeJSON(copy, to: pageMetaURL(copy.id))
+
+        // Traço, se houver. Cópia direta dos bytes opacos.
+        if let data = try readDrawing(pageID: id) {
+            do {
+                try data.write(to: pageDrawingURL(copy.id), options: [.atomic])
+            } catch {
+                throw CadernoError.io("falha ao copiar traço na duplicação: \(error.localizedDescription)")
+            }
+        }
+
+        manifest.pageOrder.insert(copy.id, at: idx + 1)
+        manifest.updatedAt = now
+        try saveManifest(manifest)
+        return copy
+    }
+
+    /// Marca/desmarca a página como favorita e carimba `updatedAt`. Quando `false`, gravamos
+    /// `nil` (o encoder omite a chave), mantendo compat com arquivos que nunca tiveram o campo.
+    public func setFavorite(_ favorite: Bool, pageID: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        var meta = try readPageMeta(pageID)
+        let now = Date()
+        meta.favorite = favorite ? true : nil
+        meta.updatedAt = now
+        try writeJSON(meta, to: pageMetaURL(pageID))
+
+        var manifest = try loadManifest()
+        manifest.updatedAt = now
+        try saveManifest(manifest)
+    }
+
+    // MARK: - Objetos/imagens sobrepostos à página
+
+    /// Substitui a lista de objetos (imagens etc.) de uma página e carimba `updatedAt`.
+    /// Lista vazia é gravada como `nil` (o encoder omite a chave), mantendo compatível com
+    /// arquivos que nunca tiveram objetos. Mesmo padrão atômico de `writeDrawing`.
+    public func setElements(_ elements: [PageElement], pageID: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        var meta = try readPageMeta(pageID)
+        let now = Date()
+        meta.elements = elements.isEmpty ? nil : elements
+        meta.updatedAt = now
+        try writeJSON(meta, to: pageMetaURL(pageID))
+
+        var manifest = try loadManifest()
+        manifest.updatedAt = now
+        try saveManifest(manifest)
+    }
+
+    /// Salva os bytes de um asset (ex.: foto) em `assets/<uuid>.<ext>` e devolve o nome do
+    /// arquivo (o `assetID` que vai em `PageElement.assetID`). Escrita atômica.
+    public func saveAsset(_ data: Data, preferredExtension ext: String) throws -> String {
+        lock.lock(); defer { lock.unlock() }
+        let cleanExt = ext.trimmingCharacters(in: .whitespaces).isEmpty ? "dat" : ext
+        let assetID = UUID().uuidString + "." + cleanExt
+        do {
+            if !fm.fileExists(atPath: assetsDir.path) {
+                try fm.createDirectory(at: assetsDir, withIntermediateDirectories: true)
+            }
+            try data.write(to: assetsDir.appendingPathComponent(assetID), options: [.atomic])
+        } catch {
+            throw CadernoError.io("falha ao salvar asset: \(error.localizedDescription)")
+        }
+        return assetID
+    }
+
+    /// Bytes de um asset por `assetID`, ou `nil` se não existir.
+    public func readAsset(id: String) throws -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        let url = assetsDir.appendingPathComponent(id)
+        guard fm.fileExists(atPath: url.path) else { return nil }
+        do {
+            return try Data(contentsOf: url)
+        } catch {
+            throw CadernoError.io("falha ao ler asset \(id): \(error.localizedDescription)")
+        }
+    }
+
+    /// URL em disco de um asset (para carregar imagem direto do arquivo, sem cópia em memória).
+    public func assetFileURL(id: String) -> URL {
+        assetsDir.appendingPathComponent(id)
     }
 
     // MARK: - Traço (bytes opacos)

@@ -1,5 +1,7 @@
 name: CI
 
+# Dispara a cada envio (push) e pull request na branch main. Compila e testa num Mac
+# na nuvem do GitHub — sem precisar de Mac nem de terminal para ver o resultado.
 on:
   push:
     branches: [main]
@@ -7,20 +9,27 @@ on:
     branches: [main]
 
 jobs:
+  # PORTÃO DE QUALIDADE (bloqueia): compila e testa a biblioteca pura CadernoCore.
   test:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Versao do Swift
+      - name: Versao do Swift (diagnostico)
         run: swift --version
       - name: Testar CadernoCore
         run: swift test
 
+  # SMOKE TEST (nao bloqueia): tenta compilar o app .swiftpm inteiro (inclui AppModule).
+  # continue-on-error deixa o portao principal verde mesmo se isto falhar; os logs deste
+  # job sao a janela para erros de compilacao do AppModule.
   smoke-app:
     runs-on: macos-14
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Listar schemes disponiveis
+        working-directory: BonfimBook.swiftpm
+        run: xcodebuild -list || true
       - name: Compilar o app e reportar erros no resumo
         working-directory: BonfimBook.swiftpm
         run: |
@@ -28,7 +37,7 @@ jobs:
           xcodebuild -scheme BonfimBook -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build > build.log 2>&1
           code=$?
           {
-            echo "## smoke-app (exit $code)"
+            echo "## smoke-app — compilacao do app (exit $code)"
             echo "### Erros e avisos"
             echo '```'
             grep -E ": error:|: warning:" build.log | sed 's#/Users/runner/work/bonfimbook/bonfimbook/##g' | sort -u | head -100
