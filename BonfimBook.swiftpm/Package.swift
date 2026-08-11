@@ -26,8 +26,8 @@ let package = Package(
             // Swift Playgrounds não exige conta paga; o Playgrounds preenche a assinatura.
             displayVersion: "0.1",
             bundleVersion: "1",
-            // SEM appIcon custom nesta fase (nenhum iconAssetName).
-            // accentColor presetado (opcional) — cor de destaque da UI, sem asset catalog.
+            // Ícone do app: imagem "AppIcon" no catálogo Assets.xcassets (o "BF" em degradê).
+            iconAssetName: "AppIcon",
             accentColor: .presetColor(.indigo),
             supportedDeviceFamilies: [
                 .pad
@@ -61,7 +61,10 @@ let package = Package(
         .executableTarget(
             name: "AppModule",
             dependencies: ["CadernoCore"],
-            path: "Sources/AppModule"
+            path: "Sources/AppModule",
+            resources: [
+                .process("Assets.xcassets")
+            ]
         )
     ]
 )

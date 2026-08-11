@@ -33,6 +33,8 @@ struct NotebookView: View {
     // Modo "mexer nas imagens": quando ligado, o dedo move/redimensiona imagens em vez de
     // desenhar (o canvas para de receber toques; a camada de imagens passa a recebê-los).
     @State private var imageEditMode = false
+    // Modo estudo: anteparos ficam tocáveis (revelar/esconder); não dá pra escrever.
+    @State private var studyMode = false
     // Tamanho real da área de página na tela — usado para centralizar imagens novas.
     @State private var pageSize: CGSize = .zero
 
@@ -229,13 +231,14 @@ struct NotebookView: View {
                         store: store,
                         elements: $elements,
                         selectedElementID: $selectedElementID,
+                        studyMode: studyMode,
                         onCommit: { newElements in persistElements(newElements) },
                         onEditText: { element in beginEditText(element) },
                         onRemoveBackground: { element in removeBackground(for: element) }
                     )
-                    .allowsHitTesting(imageEditMode)
+                    .allowsHitTesting(imageEditMode || studyMode)
 
-                    // Traço à mão: por cima. Só recebe toque FORA do modo edição.
+                    // Traço à mão: por cima. Só recebe toque FORA do modo edição/estudo.
                     PKCanvasRepresentable(
                         store: store,
                         backup: backup,
@@ -243,7 +246,7 @@ struct NotebookView: View {
                         drawingPolicy: $drawingPolicy,
                         controller: canvasController
                     )
-                    .allowsHitTesting(!imageEditMode)
+                    .allowsHitTesting(!imageEditMode && !studyMode)
                     // Recria o canvas ao trocar de página: garante a carga inicial correta
                     // e descarta qualquer debounce pendente da página anterior.
                     .id(page.id)
@@ -316,12 +319,23 @@ struct NotebookView: View {
             // Modo "mexer nas imagens" (liga/desliga). Destacado quando ligado.
             Button {
                 imageEditMode.toggle()
+                if imageEditMode { studyMode = false }
                 if !imageEditMode { selectedElementID = nil }
             } label: {
                 Image(systemName: imageEditMode ? "hand.point.up.left.fill" : "hand.point.up.left")
             }
             .tint(imageEditMode ? .accentColor : nil)
             .accessibilityLabel(imageEditMode ? "Sair do modo imagem" : "Mexer nas imagens")
+
+            // Modo estudo (liga/desliga): tocar nos anteparos revela/esconde.
+            Button {
+                studyMode.toggle()
+                if studyMode { imageEditMode = false; selectedElementID = nil }
+            } label: {
+                Image(systemName: studyMode ? "eye.fill" : "eye.slash")
+            }
+            .tint(studyMode ? .accentColor : nil)
+            .accessibilityLabel(studyMode ? "Sair do modo estudo" : "Modo estudo")
 
             moreMenu
 
@@ -376,6 +390,12 @@ struct NotebookView: View {
                 insertTextBox()
             } label: {
                 Label("Inserir caixa de texto", systemImage: "textbox")
+            }
+
+            Button {
+                insertCover()
+            } label: {
+                Label("Adicionar anteparo (estudo)", systemImage: "rectangle.slash")
             }
 
             Button {
@@ -746,6 +766,31 @@ struct NotebookView: View {
         selectedElementID = element.id
         imageEditMode = true
         beginEditText(element)
+    }
+
+    /// Cria um anteparo de estudo (retângulo opaco) no centro e entra no modo de mexer para
+    /// posicionar. Depois, no "modo estudo", tocar nele revela/esconde o que está por baixo.
+    private func insertCover() {
+        guard currentPage != nil else { return }
+        let size = effectiveSize
+        let width = Double(size.width) * 0.6
+        let height: Double = 70
+        let element = PageElement(
+            kind: .cover,
+            x: Double(size.width) / 2 - width / 2,
+            y: Double(size.height) / 2 - height / 2,
+            width: width,
+            height: height,
+            colorHex: "#B8BEC6"
+        )
+        var newElements = elements
+        newElements.append(element)
+        elements = newElements
+        persistElements(newElements)
+
+        selectedElementID = element.id
+        studyMode = false
+        imageEditMode = true
     }
 
     /// Abre o editor de texto de uma caixa de texto.

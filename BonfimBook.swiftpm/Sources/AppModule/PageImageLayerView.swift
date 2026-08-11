@@ -15,6 +15,8 @@ struct PageImageLayerView: View {
     let store: NotebookStore
     @Binding var elements: [PageElement]
     @Binding var selectedElementID: String?
+    /// Modo estudo: anteparos ficam "tocáveis" (tocar revela/esconde); nada mais é editável.
+    var studyMode: Bool = false
     /// Chamado ao FIM de um gesto (mover/redimensionar) ou ao apagar, para persistir.
     var onCommit: ([PageElement]) -> Void
     /// Pedido para editar o texto de uma caixa de texto (a tela do caderno abre o editor).
@@ -31,6 +33,7 @@ struct PageImageLayerView: View {
                     store: store,
                     element: element,
                     isSelected: element.id == selectedElementID,
+                    studyMode: studyMode,
                     onSelect: { selectedElementID = element.id },
                     onDelete: { deleteElement(id: element.id) },
                     onMove: { newX, newY in
@@ -96,6 +99,7 @@ private struct ImageElementView: View {
     let store: NotebookStore
     let element: PageElement
     let isSelected: Bool
+    let studyMode: Bool
     var onSelect: () -> Void
     var onDelete: () -> Void
     var onMove: (Double, Double) -> Void    // (novoX, novoY) em topo-esquerda
@@ -107,6 +111,8 @@ private struct ImageElementView: View {
     @State private var dragOffset: CGSize = .zero
     /// Fator de escala em curso da pinça (volta a 1 automaticamente ao terminar).
     @GestureState private var pinchScale: CGFloat = 1
+    /// Anteparo revelado (só no modo estudo): mostra o que está por baixo.
+    @State private var revealed = false
 
     // Limites de redimensionamento (preservando proporção).
     private static let minSide: Double = 40
@@ -125,18 +131,24 @@ private struct ImageElementView: View {
     }
 
     var body: some View {
-        // Base comum: conteúdo dimensionado, rotacionado e posicionado pelo centro.
-        // Tocar num não-selecionado seleciona; o toque em espaço vazio é do integrador.
-        let base = framedContent
-            .rotationEffect(.radians(element.rotation)) // 0 = sem rotação (respeitado no display)
-            .position(x: displayCenterX, y: displayCenterY)
-            .onTapGesture { if !isSelected { onSelect() } }
-
-        // Move/pinça só valem para o elemento SELECIONADO.
-        if isSelected {
-            base.gesture(combinedGesture)
+        if studyMode {
+            // No modo estudo nada é editável: só TOCAR num anteparo revela/esconde o que ele tampa.
+            framedContent
+                .rotationEffect(.radians(element.rotation))
+                .position(x: displayCenterX, y: displayCenterY)
+                .onTapGesture { if element.kind == .cover { revealed.toggle() } }
         } else {
-            base
+            let base = framedContent
+                .rotationEffect(.radians(element.rotation)) // 0 = sem rotação (respeitado no display)
+                .position(x: displayCenterX, y: displayCenterY)
+                .onTapGesture { if !isSelected { onSelect() } }
+
+            // Move/pinça só valem para o elemento SELECIONADO.
+            if isSelected {
+                base.gesture(combinedGesture)
+            } else {
+                base
+            }
         }
     }
 
@@ -145,7 +157,9 @@ private struct ImageElementView: View {
     @ViewBuilder
     private var framedContent: some View {
         Group {
-            if element.kind == .text {
+            if element.kind == .cover {
+                coverContent
+            } else if element.kind == .text {
                 textContent
             } else if let uiImage = loadedImage {
                 Image(uiImage: uiImage)
@@ -158,14 +172,29 @@ private struct ImageElementView: View {
                     .frame(width: displayWidth, height: displayHeight)
             }
         }
-        .overlay { if isSelected { selectionBorder } }
-        .overlay(alignment: .topLeading) { if isSelected { deleteButton } }
+        .overlay { if isSelected && !studyMode { selectionBorder } }
+        .overlay(alignment: .topLeading) { if isSelected && !studyMode { deleteButton } }
         .overlay(alignment: .topTrailing) {
-            if isSelected && element.kind == .text { editButton }
+            if isSelected && !studyMode && element.kind == .text { editButton }
         }
         .overlay(alignment: .bottomTrailing) {
-            if isSelected && element.kind == .image { removeBGButton }
+            if isSelected && !studyMode && element.kind == .image { removeBGButton }
         }
+    }
+
+    /// Anteparo de estudo: retângulo opaco que tampa o conteúdo. No modo estudo, quando
+    /// "revelado", fica quase transparente para você conferir a resposta.
+    private var coverContent: some View {
+        let color = PageElementColor.from(hex: element.colorHex) ?? Color(white: 0.72)
+        return RoundedRectangle(cornerRadius: 6)
+            .fill(color.opacity((studyMode && revealed) ? 0.15 : 1.0))
+            .frame(width: displayWidth, height: displayHeight)
+            .overlay {
+                if !(studyMode && revealed) {
+                    Image(systemName: "eye.slash.fill")
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+            }
     }
 
     /// Botão "tirar fundo" (só em imagens selecionadas), canto inferior-direito.

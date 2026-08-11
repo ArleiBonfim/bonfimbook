@@ -14,6 +14,7 @@ public struct PageElement: Codable, Equatable, Identifiable {
     public enum Kind: String, Codable {
         case image
         case text
+        case cover   // anteparo de estudo: retângulo opaco que tampa a informação
     }
 
     public var id: String        // UUID().uuidString
