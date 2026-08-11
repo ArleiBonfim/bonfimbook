@@ -58,6 +58,11 @@ struct NotebookView: View {
     @State private var aiPrompt = ""
     @State private var isGenerating = false
     @State private var showAppleGen = false
+    // Organizar anotação (IA de texto).
+    @State private var showOrganizeChoice = false
+    @State private var isOrganizing = false
+    @State private var organizeText = ""
+    @State private var showOrganizeResult = false
 
     // Dimensões lógicas de referência quando ainda não sabemos o tamanho real da tela.
     private static let fallbackSize = CGSize(width: 768, height: 1024)
@@ -77,7 +82,7 @@ struct NotebookView: View {
             bottomBar
         }
         .navigationBarHidden(true)
-        .overlay { if isGenerating { generatingOverlay } }
+        .overlay { if let msg = busyMessage { busyOverlay(msg) } }
         .appleImagePlaygroundSheet(isPresented: $showAppleGen, seed: "") { data in
             insertImage(data: data, ext: "png")
         }
@@ -126,6 +131,11 @@ struct NotebookView: View {
                 )
                 .ignoresSafeArea()
             }
+            .sheet(isPresented: $showOrganizeResult) {
+                OrganizeResultView(text: organizeText) { text in
+                    createPageWithText(text)
+                }
+            }
     }
 
     private func withNotebookAlerts<V: View>(_ v: V) -> some View {
@@ -166,6 +176,15 @@ struct NotebookView: View {
                 Button("OK", role: .cancel) { errorMessage = nil }
             } message: { msg in
                 Text(msg)
+            }
+            .confirmationDialog("Organizar anotação", isPresented: $showOrganizeChoice, titleVisibility: .visible) {
+                if AppleTextAI.available {
+                    Button("No iPad (privado)") { organizeNotes(useApple: true) }
+                }
+                Button("Online (grátis)") { organizeNotes(useApple: false) }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Vou ler sua letra e o texto digitado e arrumar. \u{201C}Online\u{201D} envia o texto a um serviço externo grátis.")
             }
     }
 
@@ -378,6 +397,12 @@ struct NotebookView: View {
                 } label: {
                     Label("Gerar imagem no iPad (Apple)", systemImage: "sparkles")
                 }
+            }
+
+            Button {
+                showOrganizeChoice = true
+            } label: {
+                Label("Organizar anotação (IA)", systemImage: "wand.and.stars.inverse")
             }
 
             Divider()
@@ -769,18 +794,99 @@ struct NotebookView: View {
         }
     }
 
-    /// Cobertura translúcida com "Gerando imagem…" enquanto a IA trabalha.
-    private var generatingOverlay: some View {
+    /// Mensagem do aviso "ocupado" (nil = nada em andamento).
+    private var busyMessage: String? {
+        if isGenerating { return "Gerando imagem…" }
+        if isOrganizing { return "Organizando…" }
+        return nil
+    }
+
+    /// Cobertura translúcida com um aviso enquanto a IA trabalha (imagem ou organização).
+    private func busyOverlay(_ text: String) -> some View {
         ZStack {
             Color.black.opacity(0.25).ignoresSafeArea()
             VStack(spacing: 12) {
                 ProgressView()
-                Text("Gerando imagem…")
+                Text(text)
                     .font(.subheadline)
             }
             .padding(24)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         }
+    }
+
+    // MARK: - Organizar anotação (IA de texto)
+
+    /// Junta o texto (digitado + reconhecido da letra) e organiza com IA (Apple ou online).
+    private func organizeNotes(useApple: Bool) {
+        let snapshot = pages
+        isOrganizing = true
+        Task {
+            let gathered = await Self.gatherText(from: snapshot, store: store)
+            let trimmed = gathered.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                await MainActor.run {
+                    isOrganizing = false
+                    errorMessage = "Não encontrei texto pra organizar nesta anotação. Escreva/digite algo primeiro."
+                }
+                return
+            }
+            do {
+                let result = useApple ? try await AppleTextAI.organize(trimmed)
+                                      : try await AITextService.organize(trimmed)
+                await MainActor.run {
+                    isOrganizing = false
+                    organizeText = result
+                    showOrganizeResult = true
+                }
+            } catch {
+                await MainActor.run {
+                    isOrganizing = false
+                    errorMessage = "Não consegui organizar: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    /// Percorre todas as páginas: pega o texto digitado (caixas de texto) e reconhece a letra
+    /// (OCR) de cada traço. Roda fora da main thread (é pesado).
+    private static func gatherText(from pages: [PageMeta], store: NotebookStore) async -> String {
+        var parts: [String] = []
+        for page in pages {
+            if let elements = page.elements {
+                for element in elements where element.kind == .text {
+                    if let t = element.text, !t.isEmpty { parts.append(t) }
+                }
+            }
+            if let data = try? store.readDrawing(pageID: page.id),
+               let drawing = try? PKDrawing(data: data) {
+                let bounds = drawing.bounds
+                if bounds.width > 0, bounds.height > 0 {
+                    let image = drawing.image(from: bounds, scale: 2)
+                    let ocr = OCRService.recognizeText(in: image)
+                    if !ocr.isEmpty { parts.append(ocr) }
+                }
+            }
+        }
+        return parts.joined(separator: "\n")
+    }
+
+    /// Cria uma página nova com o texto organizado dentro de uma caixa de texto.
+    private func createPageWithText(_ text: String) {
+        guard let page = try? store.addPage(template: currentTemplate.rawValue) else { return }
+        let size = effectiveSize
+        let element = PageElement(
+            kind: .text,
+            x: 40,
+            y: 40,
+            width: Double(size.width) - 80,
+            height: Double(size.height) - 80,
+            text: text,
+            fontSize: 18,
+            colorHex: "#000000"
+        )
+        try? store.setElements([element], pageID: page.id)
+        goToNewPage(page.id)
     }
 }
 
