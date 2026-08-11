@@ -80,6 +80,12 @@ struct NotebookView: View {
         VStack(spacing: 0) {
             topBar
             Divider()
+            // Barra fina de canetas (nossa, discreta). Some no modo imagem/estudo e quando
+            // o usuário prefere a paleta flutuante completa da Apple.
+            if showPenBar {
+                PenToolbarView(controller: canvasController)
+                Divider()
+            }
             pageArea
             Divider()
             bottomBar
@@ -201,6 +207,12 @@ struct NotebookView: View {
     /// Tamanho a usar para posicionar imagens (real da tela, ou o de referência).
     private var effectiveSize: CGSize {
         pageSize.width > 0 && pageSize.height > 0 ? pageSize : Self.fallbackSize
+    }
+
+    /// A barra fina de canetas aparece quando estamos escrevendo (não no modo imagem/estudo)
+    /// e o usuário não pediu a paleta completa da Apple.
+    private var showPenBar: Bool {
+        !canvasController.useSystemPicker && !imageEditMode && !studyMode
     }
 
     // MARK: - Área central (papel + imagens + canvas)
@@ -336,6 +348,16 @@ struct NotebookView: View {
             }
             .tint(studyMode ? .accentColor : nil)
             .accessibilityLabel(studyMode ? "Sair do modo estudo" : "Modo estudo")
+
+            // Alterna entre a barra fina (discreta) e a paleta completa flutuante da Apple.
+            Button {
+                canvasController.useSystemPicker.toggle()
+                canvasController.syncPickerVisibility()
+            } label: {
+                Image(systemName: canvasController.useSystemPicker ? "paintpalette.fill" : "paintpalette")
+            }
+            .tint(canvasController.useSystemPicker ? .accentColor : nil)
+            .accessibilityLabel(canvasController.useSystemPicker ? "Usar barra fina de canetas" : "Abrir paleta completa da Apple")
 
             moreMenu
 

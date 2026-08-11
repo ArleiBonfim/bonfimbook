@@ -35,13 +35,6 @@ struct PKCanvasRepresentable: UIViewRepresentable {
         canvas.maximumZoomScale = 4.0
         canvas.bouncesZoom = true
 
-        // Liga a referência fraca do controlador ao canvas. Feito na main thread porque
-        // o controlador é `ObservableObject` observado pela UI.
-        let controller = self.controller
-        DispatchQueue.main.async {
-            controller.canvas = canvas
-        }
-
         // Carga inicial: bytes opacos → PKDrawing. `nil` = página ainda sem traço.
         // `try?` sobre uma função que devolve `Data?` já entrega `Data?` (Swift achata o
         // opcional), então UM `if let` basta — um segundo desempacotamento não compila.
@@ -50,16 +43,19 @@ struct PKCanvasRepresentable: UIViewRepresentable {
             canvas.drawing = drawing
         }
 
-        // Tool picker flutuante padrão do PencilKit.
+        // Paleta da Apple: criada sempre, mas quem decide se aparece é o controlador
+        // (`useSystemPicker`). Por padrão fica ESCONDIDA e a nossa barra fina assume.
         let toolPicker = PKToolPicker()
-        toolPicker.addObserver(canvas)
-        toolPicker.setVisible(true, forFirstResponder: canvas)
-        context.coordinator.toolPicker = toolPicker
+        context.coordinator.toolPicker = toolPicker   // dono forte
+
+        // Liga o controlador ao canvas e à paleta, decide a visibilidade inicial (barra fina
+        // ou paleta), aplica a caneta atual e sincroniza os botões — tudo na main thread,
+        // pois o controlador é `ObservableObject` observado pela UI.
+        let controller = self.controller
         DispatchQueue.main.async {
-            canvas.becomeFirstResponder()
-        }
-        // Estado inicial dos botões desfazer/refazer (na main thread).
-        DispatchQueue.main.async {
+            controller.canvas = canvas
+            controller.toolPicker = toolPicker
+            controller.syncPickerVisibility()   // mostra paleta OU aplica a caneta da barra
             controller.refresh()
         }
 

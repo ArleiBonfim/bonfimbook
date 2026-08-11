@@ -1,6 +1,15 @@
 import SwiftUI
 import PencilKit
 
+/// Tipos de "caneta" oferecidos pela nossa barra fina (mesmos traços do PencilKit).
+enum PenKind: String, CaseIterable {
+    case pen        // caneta
+    case marker     // marca-texto (destaque)
+    case pencil     // lápis
+    case eraser     // borracha (apaga o traço inteiro — "apagar rabiscando")
+    case lasso      // laço (selecionar/mover traços)
+}
+
 /// Controlador leve de Undo/Redo do canvas de desenho.
 ///
 /// Faz a ponte entre a UI SwiftUI (que precisa saber se os botões desfazer/refazer
@@ -19,6 +28,83 @@ final class CanvasController: ObservableObject {
     /// Espelham o estado do `UndoManager` para a UI. Publicados para as views observarem.
     @Published var canUndo: Bool = false
     @Published var canRedo: Bool = false
+
+    // MARK: - Barra de canetas (nossa, discreta) x Paleta da Apple
+
+    /// Referência FRACA à paleta flutuante da Apple. O dono forte é o Coordinator do
+    /// `PKCanvasRepresentable`; aqui só a usamos para mostrar/esconder.
+    weak var toolPicker: PKToolPicker?
+
+    /// `true` = usar a paleta completa da Apple (flutuante). `false` (padrão) = usar a
+    /// nossa barra fina no topo, mais discreta. As duas controlam o MESMO canvas.
+    @Published var useSystemPicker: Bool = false
+
+    /// Estado da nossa barra fina (qual caneta, cor e espessura estão ativas).
+    @Published var toolKind: PenKind = .pen
+    @Published var inkColor: Color = .black
+    @Published var lineWidth: CGFloat = 5
+
+    /// Aplica no canvas a caneta/cor/espessura atuais da barra fina. É o coração da barra:
+    /// toda vez que o usuário toca numa caneta, cor ou espessura, chamamos isto. Trocar o
+    /// `tool` programaticamente só "pega" quando a paleta da Apple NÃO está observando o
+    /// canvas — por isso `syncPickerVisibility()` remove o observador ao usar a barra fina.
+    func applyTool() {
+        guard let canvas = canvas else { return }
+        let color = UIColor(inkColor)
+        switch toolKind {
+        case .pen:
+            canvas.tool = PKInkingTool(.pen, color: color, width: lineWidth)
+        case .marker:
+            // Marca-texto é mais largo e translúcido por natureza; engrossa a ponta.
+            canvas.tool = PKInkingTool(.marker, color: color, width: max(lineWidth * 3, 14))
+        case .pencil:
+            canvas.tool = PKInkingTool(.pencil, color: color, width: lineWidth)
+        case .eraser:
+            // Borracha de OBJETO: passa por cima e o traço inteiro some (apagar rabiscando).
+            canvas.tool = PKEraserTool(.vector)
+        case .lasso:
+            canvas.tool = PKLassoTool()
+        }
+    }
+
+    /// Seleciona uma caneta de tinta (caneta/marca-texto/lápis) e aplica na hora.
+    func selectInk(_ kind: PenKind) {
+        toolKind = kind
+        applyTool()
+    }
+
+    /// Define a cor atual. Se estava na borracha/laço, volta para a caneta (faz mais sentido
+    /// escolher cor querendo escrever). Aplica na hora.
+    func selectColor(_ color: Color) {
+        inkColor = color
+        if toolKind == .eraser || toolKind == .lasso { toolKind = .pen }
+        applyTool()
+    }
+
+    /// Define a espessura atual e aplica na hora.
+    func selectWidth(_ width: CGFloat) {
+        lineWidth = width
+        if toolKind == .eraser || toolKind == .lasso { toolKind = .pen }
+        applyTool()
+    }
+
+    /// Mostra a paleta da Apple OU a nossa barra fina, conforme `useSystemPicker`.
+    ///
+    /// Regra crucial: quando a paleta da Apple está VISÍVEL e OBSERVANDO o canvas, ela manda
+    /// no `tool`. Para a nossa barra fina funcionar, precisamos remover esse observador e
+    /// reaplicar a nossa caneta. Ao voltar para a paleta, re-adicionamos o observador.
+    func syncPickerVisibility() {
+        guard let canvas = canvas, let picker = toolPicker else { return }
+        if useSystemPicker {
+            picker.addObserver(canvas)
+            picker.setVisible(true, forFirstResponder: canvas)
+        } else {
+            picker.setVisible(false, forFirstResponder: canvas)
+            picker.removeObserver(canvas)
+            applyTool()
+        }
+        canvas.becomeFirstResponder()
+    }
 
     /// Desfaz o último passo registrado no canvas e reavalia o estado dos botões.
     func undo() {
