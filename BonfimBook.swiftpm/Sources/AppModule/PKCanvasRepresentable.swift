@@ -96,6 +96,28 @@ struct PKCanvasRepresentable: UIViewRepresentable {
             self.controller = controller
         }
 
+        // MARK: - Zoom/rolagem → espelhar nas camadas de trás
+        //
+        // `PKCanvasView` é um `UIScrollView`; ao dar pinça ou rolar com dois dedos, ele
+        // amplia/desloca o TRAÇO (que continua nítido, pois o PencilKit re-renderiza vetores).
+        // Estes dois callbacks publicam a mesma escala/deslocamento no controlador para o
+        // papel e as imagens acompanharem, dando a sensação de zoom da PÁGINA inteira.
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            publishZoom(scrollView)
+        }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            publishZoom(scrollView)
+        }
+
+        /// Copia escala e deslocamento atuais do canvas para o controlador. Roda na main
+        /// (delegate de UI), então atualiza os `@Published` direto.
+        private func publishZoom(_ scrollView: UIScrollView) {
+            controller.zoomScale = scrollView.zoomScale
+            controller.contentOffset = scrollView.contentOffset
+        }
+
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             // Lê o desenho na main thread (onde o delegate roda) e agenda a gravação
             // pesada para a fila de background com debounce.

@@ -220,37 +220,18 @@ struct NotebookView: View {
     private var pageArea: some View {
         GeometryReader { geo in
             ZStack {
-                // Fundo: documento importado (PDF/imagem escaneada) OU papel do template.
-                // O papel é sempre claro e independe de dark mode (ver PaperBackgroundView).
-                if let page = currentPage, let bg = page.background {
-                    PageBackgroundContentView(store: store, background: bg)
-                } else {
-                    PaperBackgroundView(template: currentTemplate)
-                }
-
-                if let page = currentPage {
-                    // Camada invisível para "desselecionar" ao tocar em espaço vazio,
-                    // ativa só no modo de edição de imagem (fica sob as imagens).
-                    if imageEditMode {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedElementID = nil }
-                    }
-
-                    // Imagens: abaixo do canvas (o traço fica sempre por cima). Só recebem
-                    // toque no modo edição.
-                    PageImageLayerView(
-                        store: store,
-                        elements: $elements,
-                        selectedElementID: $selectedElementID,
-                        studyMode: studyMode,
-                        onCommit: { newElements in persistElements(newElements) },
-                        onEditText: { element in beginEditText(element) },
-                        onRemoveBackground: { element in removeBackground(for: element) }
-                    )
+                // CAMADAS DE TRÁS (papel + imagens): acompanham o zoom/rolagem do canvas via
+                // o MESMO scaleEffect/offset, para a PÁGINA INTEIRA ampliar junto (não só o
+                // traço). O `anchor: .topLeading` casa com a origem do conteúdo do canvas.
+                backLayers(size: geo.size)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .scaleEffect(canvasController.zoomScale, anchor: .topLeading)
+                    .offset(x: -canvasController.contentOffset.x,
+                            y: -canvasController.contentOffset.y)
                     .allowsHitTesting(imageEditMode || studyMode)
 
-                    // Traço à mão: por cima. Só recebe toque FORA do modo edição/estudo.
+                // Traço à mão: por cima, é ele quem DIRIGE o zoom (fica nítido ao ampliar).
+                if let page = currentPage {
                     PKCanvasRepresentable(
                         store: store,
                         backup: backup,
@@ -268,10 +249,44 @@ struct NotebookView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .clipped()
             .onAppear { pageSize = geo.size }
             .onChange(of: geo.size) { pageSize = $0 }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Papel (ou documento importado) + imagens/texto/anteparos. Fica atrás do canvas e é
+    /// o bloco que recebe o zoom da página. Separado num sub-view para não estourar o
+    /// verificador de tipos do iPad.
+    @ViewBuilder
+    private func backLayers(size: CGSize) -> some View {
+        ZStack {
+            if let page = currentPage, let bg = page.background {
+                PageBackgroundContentView(store: store, background: bg)
+            } else {
+                PaperBackgroundView(template: currentTemplate)
+            }
+
+            if currentPage != nil {
+                // Toque em espaço vazio desseleciona (só no modo de edição de imagem).
+                if imageEditMode {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedElementID = nil }
+                }
+
+                PageImageLayerView(
+                    store: store,
+                    elements: $elements,
+                    selectedElementID: $selectedElementID,
+                    studyMode: studyMode,
+                    onCommit: { newElements in persistElements(newElements) },
+                    onEditText: { element in beginEditText(element) },
+                    onRemoveBackground: { element in removeBackground(for: element) }
+                )
+            }
+        }
     }
 
     // MARK: - Barra superior
@@ -333,6 +348,9 @@ struct NotebookView: View {
                 imageEditMode.toggle()
                 if imageEditMode { studyMode = false }
                 if !imageEditMode { selectedElementID = nil }
+                // O zoom do canvas não fica ativo no modo imagem; zera para as camadas não
+                // ficarem ampliadas e desalinhadas ao mexer nas imagens.
+                canvasController.resetZoom()
             } label: {
                 Image(systemName: imageEditMode ? "hand.point.up.left.fill" : "hand.point.up.left")
             }
@@ -343,6 +361,7 @@ struct NotebookView: View {
             Button {
                 studyMode.toggle()
                 if studyMode { imageEditMode = false; selectedElementID = nil }
+                canvasController.resetZoom()
             } label: {
                 Image(systemName: studyMode ? "eye.fill" : "eye.slash")
             }
@@ -587,6 +606,9 @@ struct NotebookView: View {
     private func loadElements() {
         elements = currentPage?.elements ?? []
         selectedElementID = nil
+        // Cada página começa em 100%. O canvas é recriado ao trocar de página (.id), então
+        // zeramos o zoom espelhado para o papel não herdar o zoom da página anterior.
+        canvasController.resetZoom()
     }
 
     private func goToPage(_ index: Int) {

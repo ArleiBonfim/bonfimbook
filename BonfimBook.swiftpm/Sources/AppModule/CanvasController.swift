@@ -44,6 +44,27 @@ final class CanvasController: ObservableObject {
     @Published var inkColor: Color = .black
     @Published var lineWidth: CGFloat = 5
 
+    // MARK: - Zoom da PÁGINA INTEIRA (papel + imagens acompanham o traço)
+
+    /// Espelham o zoom/rolagem do canvas para as camadas de trás (papel e imagens) seguirem
+    /// junto. Quem escreve nestes é o Coordinator do `PKCanvasRepresentable` (via delegate de
+    /// scroll); a UI só LÊ para aplicar o mesmo `scaleEffect`/`offset` no papel e nas imagens.
+    @Published var zoomScale: CGFloat = 1
+    @Published var contentOffset: CGPoint = .zero
+
+    /// Volta o zoom ao normal (1×, sem deslocamento). Usado ao entrar nos modos imagem/estudo,
+    /// onde o zoom do canvas não está ativo e manteria as camadas desalinhadas.
+    func resetZoom() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.resetZoom() }
+            return
+        }
+        zoomScale = 1
+        contentOffset = .zero
+        canvas?.setZoomScale(1, animated: false)
+        canvas?.setContentOffset(.zero, animated: false)
+    }
+
     /// Aplica no canvas a caneta/cor/espessura atuais da barra fina. É o coração da barra:
     /// toda vez que o usuário toca numa caneta, cor ou espessura, chamamos isto. Trocar o
     /// `tool` programaticamente só "pega" quando a paleta da Apple NÃO está observando o
