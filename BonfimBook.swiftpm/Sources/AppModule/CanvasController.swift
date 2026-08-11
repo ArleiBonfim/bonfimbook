@@ -44,6 +44,11 @@ final class CanvasController: ObservableObject {
     @Published var inkColor: Color = .black
     @Published var lineWidth: CGFloat = 5
 
+    /// "Modo formas": quando ligado, ao levantar a caneta o traço desenhado é analisado e,
+    /// se parecer uma linha/retângulo/círculo, é trocado pela forma perfeita (REVERSÍVEL no
+    /// desfazer). Opt-in — desligado não muda nada. A troca é feita no Coordinator.
+    @Published var shapeMode: Bool = false
+
     // MARK: - Zoom da PÁGINA INTEIRA (papel + imagens acompanham o traço)
 
     /// Espelham o zoom/rolagem do canvas para as camadas de trás (papel e imagens) seguirem

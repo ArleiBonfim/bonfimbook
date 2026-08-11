@@ -368,6 +368,15 @@ struct NotebookView: View {
             .tint(studyMode ? .accentColor : nil)
             .accessibilityLabel(studyMode ? "Sair do modo estudo" : "Modo estudo")
 
+            // Modo formas (liga/desliga): ao levantar a caneta, o traço vira forma perfeita.
+            Button {
+                canvasController.shapeMode.toggle()
+            } label: {
+                Image(systemName: canvasController.shapeMode ? "square.on.circle.fill" : "square.on.circle")
+            }
+            .tint(canvasController.shapeMode ? .accentColor : nil)
+            .accessibilityLabel(canvasController.shapeMode ? "Desligar modo formas" : "Modo formas")
+
             // Alterna entre a barra fina (discreta) e a paleta completa flutuante da Apple.
             Button {
                 canvasController.useSystemPicker.toggle()

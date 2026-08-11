@@ -118,6 +118,41 @@ struct PKCanvasRepresentable: UIViewRepresentable {
             controller.contentOffset = scrollView.contentOffset
         }
 
+        // MARK: - Modo formas: ao levantar a caneta, tenta virar forma perfeita
+        //
+        // `canvasViewDidEndUsingTool` dispara quando o usuário termina um traço. Se o modo
+        // formas estiver ligado e a ferramenta for de tinta, analisamos o ÚLTIMO traço e, se
+        // for uma linha/retângulo/círculo, trocamos pela forma perfeita — registrando o
+        // desfazer para poder reverter. Roda em `async` para garantir que o traço já foi
+        // efetivado no `drawing`.
+        func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+            guard controller.shapeMode, canvasView.tool is PKInkingTool else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.snapLastStroke(in: canvasView)
+            }
+        }
+
+        private func snapLastStroke(in canvasView: PKCanvasView) {
+            guard let last = canvasView.drawing.strokes.last,
+                  let snapped = ShapeSnapper.snap(last) else { return }
+
+            let oldDrawing = canvasView.drawing
+            var strokes = oldDrawing.strokes
+            strokes.removeLast()
+            strokes.append(snapped)
+            canvasView.drawing = PKDrawing(strokes: strokes)
+
+            // Trocar `drawing` na mão NÃO dispara o salvamento automático — avisamos o delegate.
+            canvasViewDrawingDidChange(canvasView)
+
+            // Desfazer volta ao traço original à mão.
+            canvasView.undoManager?.registerUndo(withTarget: canvasView) { c in
+                c.drawing = oldDrawing
+                c.delegate?.canvasViewDrawingDidChange?(c)
+            }
+            canvasView.undoManager?.setActionName("Formatar forma")
+        }
+
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             // Lê o desenho na main thread (onde o delegate roda) e agenda a gravação
             // pesada para a fila de background com debounce.
