@@ -23,6 +23,12 @@ struct PageImageLayerView: View {
     var onEditText: (PageElement) -> Void
     /// Pedido para remover o fundo de uma imagem (a tela do caderno processa e troca o asset).
     var onRemoveBackground: (PageElement) -> Void
+    /// Ações extras do menu de um elemento selecionado (todas opcionais).
+    var onDuplicate: (PageElement) -> Void = { _ in }
+    var onRotate: (PageElement) -> Void = { _ in }
+    var onBringFront: (PageElement) -> Void = { _ in }
+    var onSendBack: (PageElement) -> Void = { _ in }
+    var onSetColor: (PageElement, String) -> Void = { _, _ in }
     /// Quais elementos esta camada desenha. Serve para separar os ANTEPAROS (que precisam
     /// ficar ACIMA da tinta, para realmente tampar a escrita) das imagens/textos (abaixo).
     var filter: (PageElement) -> Bool = { _ in true }
@@ -66,7 +72,12 @@ struct PageImageLayerView: View {
                         onCommit(elements)
                     },
                     onEdit: { onEditText(element) },
-                    onRemoveBackground: { onRemoveBackground(element) }
+                    onRemoveBackground: { onRemoveBackground(element) },
+                    onDuplicate: { onDuplicate(element) },
+                    onRotate: { onRotate(element) },
+                    onBringFront: { onBringFront(element) },
+                    onSendBack: { onSendBack(element) },
+                    onSetColor: { hex in onSetColor(element, hex) }
                 )
             }
         }
@@ -109,11 +120,25 @@ private struct ImageElementView: View {
     var onResize: (Double, Double) -> Void  // (novaLargura, novaAltura)
     var onEdit: () -> Void                  // editar o texto (só caixas de texto)
     var onRemoveBackground: () -> Void      // remover o fundo (só imagens)
+    var onDuplicate: () -> Void
+    var onRotate: () -> Void
+    var onBringFront: () -> Void
+    var onSendBack: () -> Void
+    var onSetColor: (String) -> Void        // muda a cor (texto ou anteparo)
 
     /// Deslocamento em curso do arraste (some ao terminar). Só o selecionado arrasta.
     @State private var dragOffset: CGSize = .zero
     /// Fator de escala em curso da pinça (volta a 1 automaticamente ao terminar).
     @GestureState private var pinchScale: CGFloat = 1
+    /// Tamanho em curso do arraste da ALÇA de redimensionar (nil quando não está arrastando).
+    @State private var resizeSize: CGSize? = nil
+
+    /// Cores rápidas para texto/anteparo (nome + hex).
+    private static let quickColors: [(String, String)] = [
+        ("Preto", "#000000"), ("Azul", "#1E6FE8"), ("Vermelho", "#E23B3B"),
+        ("Verde", "#2F9E44"), ("Laranja", "#F08C00"), ("Roxo", "#7C4DD6"),
+        ("Branco", "#FFFFFF")
+    ]
     /// Anteparo revelado (só no modo estudo): mostra o que está por baixo.
     @State private var revealed = false
 
@@ -121,9 +146,15 @@ private struct ImageElementView: View {
     private static let minSide: Double = 40
     private static let maxSide: Double = 4000
 
-    // Tamanho exibido = tamanho persistido × pinça em curso.
-    private var displayWidth: CGFloat { CGFloat(element.width) * pinchScale }
-    private var displayHeight: CGFloat { CGFloat(element.height) * pinchScale }
+    // Tamanho exibido = arraste da alça em curso, senão tamanho persistido × pinça.
+    private var displayWidth: CGFloat {
+        if let r = resizeSize { return r.width }
+        return CGFloat(element.width) * pinchScale
+    }
+    private var displayHeight: CGFloat {
+        if let r = resizeSize { return r.height }
+        return CGFloat(element.height) * pinchScale
+    }
 
     // Centro exibido: origem topo-esquerda → centro (+ deslocamento do arraste).
     private var displayCenterX: CGFloat {
@@ -177,12 +208,96 @@ private struct ImageElementView: View {
         }
         .overlay { if isSelected && !studyMode { selectionBorder } }
         .overlay(alignment: .topLeading) { if isSelected && !studyMode { deleteButton } }
-        .overlay(alignment: .topTrailing) {
-            if isSelected && !studyMode && element.kind == .text { editButton }
+        .overlay(alignment: .topTrailing) { if isSelected && !studyMode { actionsMenuButton } }
+        .overlay(alignment: .bottomTrailing) { if isSelected && !studyMode { resizeHandle } }
+    }
+
+    /// Menu de AÇÕES do elemento selecionado (aumentar/diminuir, girar, duplicar, cor,
+    /// remover fundo, frente/trás, apagar). Concentra tudo num só botão, no canto superior-direito.
+    private var actionsMenuButton: some View {
+        Menu {
+            Button { onResize(scaled(element.width, 1.25), scaled(element.height, 1.25)) } label: {
+                Label("Aumentar", systemImage: "plus.magnifyingglass")
+            }
+            Button { onResize(scaled(element.width, 0.8), scaled(element.height, 0.8)) } label: {
+                Label("Diminuir", systemImage: "minus.magnifyingglass")
+            }
+            Button(action: onRotate) { Label("Girar 90°", systemImage: "rotate.right") }
+            Button(action: onDuplicate) { Label("Duplicar", systemImage: "plus.square.on.square") }
+
+            if element.kind == .text {
+                Button(action: onEdit) { Label("Editar texto", systemImage: "pencil") }
+            }
+            if element.kind == .text || element.kind == .cover {
+                colorSubmenu
+            }
+            if element.kind == .image {
+                Button(action: onRemoveBackground) { Label("Remover fundo", systemImage: "scissors") }
+            }
+
+            Divider()
+            Button(action: onBringFront) { Label("Trazer para frente", systemImage: "arrow.up.square") }
+            Button(action: onSendBack) { Label("Enviar para trás", systemImage: "arrow.down.square") }
+            Divider()
+            Button(role: .destructive, action: onDelete) { Label("Apagar", systemImage: "trash") }
+        } label: {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, .blue)
         }
-        .overlay(alignment: .bottomTrailing) {
-            if isSelected && !studyMode && element.kind == .image { removeBGButton }
+        .offset(x: 10, y: -10)
+    }
+
+    /// Submenu de cor (texto ou anteparo).
+    private var colorSubmenu: some View {
+        Menu {
+            ForEach(Self.quickColors, id: \.1) { pair in
+                Button(pair.0) { onSetColor(pair.1) }
+            }
+        } label: {
+            Label("Cor", systemImage: "paintpalette")
         }
+    }
+
+    /// Alça no canto inferior-direito: arraste para redimensionar (mantém a proporção).
+    private var resizeHandle: some View {
+        Circle()
+            .fill(Color.blue)
+            .frame(width: 24, height: 24)
+            .overlay(
+                Image(systemName: "arrow.down.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+            )
+            .offset(x: 12, y: 12)
+            .highPriorityGesture(resizeDrag)
+    }
+
+    private var resizeDrag: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                let newW = max(Self.minSide, element.width + Double(value.translation.width))
+                let ratio = element.width > 0 ? newW / element.width : 1
+                let newH = max(Self.minSide, element.height * ratio)
+                resizeSize = CGSize(width: newW, height: newH)
+            }
+            .onEnded { value in
+                let newW = clampSide(element.width + Double(value.translation.width))
+                let ratio = element.width > 0 ? newW / element.width : 1
+                let newH = clampSide(element.height * ratio)
+                onResize(newW, newH)
+                resizeSize = nil
+            }
+    }
+
+    /// Multiplica um lado por `factor`, mantendo dentro dos limites.
+    private func scaled(_ side: Double, _ factor: Double) -> Double {
+        clampSide(side * factor)
+    }
+
+    private func clampSide(_ v: Double) -> Double {
+        max(Self.minSide, min(Self.maxSide, v))
     }
 
     /// Anteparo de estudo: retângulo opaco que tampa o conteúdo. No modo estudo, quando

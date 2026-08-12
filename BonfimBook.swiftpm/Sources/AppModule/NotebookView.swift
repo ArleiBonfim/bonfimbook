@@ -303,6 +303,11 @@ struct NotebookView: View {
                     onCommit: { newElements in persistElements(newElements) },
                     onEditText: { element in beginEditText(element) },
                     onRemoveBackground: { element in removeBackground(for: element) },
+                    onDuplicate: { element in duplicateElement(element) },
+                    onRotate: { element in rotateElement(element) },
+                    onBringFront: { element in bringElementToFront(element) },
+                    onSendBack: { element in sendElementToBack(element) },
+                    onSetColor: { element, hex in setElementColor(element, hex) },
                     filter: { $0.kind != .cover }
                 )
             }
@@ -322,6 +327,11 @@ struct NotebookView: View {
                 onCommit: { newElements in persistElements(newElements) },
                 onEditText: { element in beginEditText(element) },
                 onRemoveBackground: { element in removeBackground(for: element) },
+                onDuplicate: { element in duplicateElement(element) },
+                onRotate: { element in rotateElement(element) },
+                onBringFront: { element in bringElementToFront(element) },
+                onSendBack: { element in sendElementToBack(element) },
+                onSetColor: { element, hex in setElementColor(element, hex) },
                 filter: { $0.kind == .cover }
             )
         }
@@ -751,6 +761,52 @@ struct NotebookView: View {
     private func commitRename() {
         try? store.setTitle(renameText)
         title = (try? store.loadManifest().title) ?? title
+    }
+
+    /// Duplica um elemento (imagem/texto/anteparo) deslocado um pouco e o seleciona.
+    private func duplicateElement(_ element: PageElement) {
+        let copy = PageElement(
+            kind: element.kind, assetID: element.assetID,
+            x: element.x + 24, y: element.y + 24,
+            width: element.width, height: element.height,
+            rotation: element.rotation, text: element.text,
+            fontSize: element.fontSize, colorHex: element.colorHex
+        )
+        var newElements = elements
+        newElements.append(copy)
+        elements = newElements
+        persistElements(newElements)
+        selectedElementID = copy.id
+    }
+
+    /// Gira o elemento em 90°.
+    private func rotateElement(_ element: PageElement) {
+        guard let idx = elements.firstIndex(where: { $0.id == element.id }) else { return }
+        elements[idx].rotation += .pi / 2
+        persistElements(elements)
+    }
+
+    /// Move o elemento para o fim da lista (fica na FRENTE dos demais).
+    private func bringElementToFront(_ element: PageElement) {
+        guard let idx = elements.firstIndex(where: { $0.id == element.id }) else { return }
+        let el = elements.remove(at: idx)
+        elements.append(el)
+        persistElements(elements)
+    }
+
+    /// Move o elemento para o começo da lista (fica ATRÁS dos demais).
+    private func sendElementToBack(_ element: PageElement) {
+        guard let idx = elements.firstIndex(where: { $0.id == element.id }) else { return }
+        let el = elements.remove(at: idx)
+        elements.insert(el, at: 0)
+        persistElements(elements)
+    }
+
+    /// Troca a cor de um texto ou anteparo.
+    private func setElementColor(_ element: PageElement, _ hex: String) {
+        guard let idx = elements.firstIndex(where: { $0.id == element.id }) else { return }
+        elements[idx].colorHex = hex
+        persistElements(elements)
     }
 
     /// Persiste a lista de imagens da página atual e mantém a memória local consistente.
