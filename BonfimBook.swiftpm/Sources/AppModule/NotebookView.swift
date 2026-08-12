@@ -157,6 +157,9 @@ struct NotebookView: View {
                     createPageWithText(text)
                 }
             }
+            .sheet(isPresented: $showAIPrompt) {
+                AIPromptSheet(text: $aiPrompt) { generateOnlineImage() }
+            }
     }
 
     private func withNotebookAlerts<V: View>(_ v: V) -> some View {
@@ -174,13 +177,6 @@ struct NotebookView: View {
                 Button("Salvar") { commitTextEdit() }
             } message: {
                 Text("Digite o texto da caixa.")
-            }
-            .alert("Gerar imagem", isPresented: $showAIPrompt) {
-                TextField("Descreva (ex.: um gato astronauta)", text: $aiPrompt)
-                Button("Cancelar", role: .cancel) {}
-                Button("Gerar") { generateOnlineImage() }
-            } message: {
-                Text("Descreva em poucas palavras. Sai em estilo desenho/clipart.")
             }
             .alert("Apagar esta página?", isPresented: $showDeleteConfirm) {
                 Button("Cancelar", role: .cancel) {}
@@ -260,6 +256,15 @@ struct NotebookView: View {
                         .font(.headline)
                         .foregroundStyle(.secondary)
                 }
+
+                // ANTEPAROS por cima da tinta (para tampar de verdade). Mesmo zoom das demais
+                // camadas; recebe toque no modo imagem/estudo (mover ou revelar).
+                coverLayer(size: geo.size)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .scaleEffect(canvasController.zoomScale, anchor: .topLeading)
+                    .offset(x: -canvasController.contentOffset.x,
+                            y: -canvasController.contentOffset.y)
+                    .allowsHitTesting(imageEditMode || studyMode)
             }
             .clipped()
             .onAppear { pageSize = geo.size }
@@ -288,6 +293,8 @@ struct NotebookView: View {
                         .onTapGesture { selectedElementID = nil }
                 }
 
+                // Imagens e caixas de texto (abaixo da tinta). Os ANTEPAROS saem daqui —
+                // vão para a camada de cima (`coverLayer`) para conseguirem tampar a escrita.
                 PageImageLayerView(
                     store: store,
                     elements: $elements,
@@ -295,9 +302,28 @@ struct NotebookView: View {
                     studyMode: studyMode,
                     onCommit: { newElements in persistElements(newElements) },
                     onEditText: { element in beginEditText(element) },
-                    onRemoveBackground: { element in removeBackground(for: element) }
+                    onRemoveBackground: { element in removeBackground(for: element) },
+                    filter: { $0.kind != .cover }
                 )
             }
+        }
+    }
+
+    /// Camada dos ANTEPAROS de estudo — desenhada ACIMA da tinta para realmente TAMPAR a
+    /// escrita (antes ficava atrás e a escrita aparecia por cima). Acompanha o mesmo zoom.
+    @ViewBuilder
+    private func coverLayer(size: CGSize) -> some View {
+        if currentPage != nil {
+            PageImageLayerView(
+                store: store,
+                elements: $elements,
+                selectedElementID: $selectedElementID,
+                studyMode: studyMode,
+                onCommit: { newElements in persistElements(newElements) },
+                onEditText: { element in beginEditText(element) },
+                onRemoveBackground: { element in removeBackground(for: element) },
+                filter: { $0.kind == .cover }
+            )
         }
     }
 

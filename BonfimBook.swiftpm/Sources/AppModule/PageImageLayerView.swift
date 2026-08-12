@@ -23,12 +23,15 @@ struct PageImageLayerView: View {
     var onEditText: (PageElement) -> Void
     /// Pedido para remover o fundo de uma imagem (a tela do caderno processa e troca o asset).
     var onRemoveBackground: (PageElement) -> Void
+    /// Quais elementos esta camada desenha. Serve para separar os ANTEPAROS (que precisam
+    /// ficar ACIMA da tinta, para realmente tampar a escrita) das imagens/textos (abaixo).
+    var filter: (PageElement) -> Bool = { _ in true }
 
     var body: some View {
         // ZStack sem tamanho próprio: cada filho se posiciona por conta própria via
         // `.position`, então a camada ocupa naturalmente o espaço do container.
         ZStack {
-            ForEach(elements) { element in
+            ForEach(elements.filter(filter)) { element in
                 ImageElementView(
                     store: store,
                     element: element,
@@ -186,8 +189,11 @@ private struct ImageElementView: View {
     /// "revelado", fica quase transparente para você conferir a resposta.
     private var coverContent: some View {
         let color = PageElementColor.from(hex: element.colorHex) ?? Color(white: 0.72)
+        // No modo estudo: opaco (tampa) até tocar → quase transparente (revela). Fora do
+        // estudo: meio transparente, para você enxergar o que está tampando ao posicionar.
+        let opacity: Double = studyMode ? (revealed ? 0.15 : 1.0) : 0.6
         return RoundedRectangle(cornerRadius: 6)
-            .fill(color.opacity((studyMode && revealed) ? 0.15 : 1.0))
+            .fill(color.opacity(opacity))
             .frame(width: displayWidth, height: displayHeight)
             .overlay {
                 if !(studyMode && revealed) {
