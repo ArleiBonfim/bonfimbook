@@ -194,6 +194,17 @@ enum PDFExporter {
             return
         }
 
+        // Forma de fluxograma: desenha o contorno e retorna (não tem asset).
+        if element.kind == .shape {
+            drawShapeElement(element, in: cg)
+            return
+        }
+
+        // Anteparo de estudo NÃO vai para o PDF (é auxílio de estudo, não conteúdo).
+        if element.kind == .cover {
+            return
+        }
+
         // `readAsset` pode lançar E devolve `Data?`; `try?` já achata o duplo-opcional para
         // `Data?`, então UM `guard let` basta (um segundo desempacotamento não compila).
         guard let data = try? store.readAsset(id: element.assetID),
@@ -217,6 +228,49 @@ enum PDFExporter {
         } else {
             image.draw(in: rect)
         }
+    }
+
+    // MARK: - Desenho de uma forma de fluxograma
+
+    /// Desenha o contorno de uma forma (retângulo/losango/elipse/seta/linha) no PDF.
+    private static func drawShapeElement(_ element: PageElement, in cg: CGContext) {
+        let rect = CGRect(x: element.x, y: element.y, width: element.width, height: element.height)
+            .insetBy(dx: 2, dy: 2)
+        let path = CGMutablePath()
+        switch element.shapeType ?? "rect" {
+        case "roundrect":
+            let r = min(rect.width, rect.height) * 0.2
+            path.addRoundedRect(in: rect, cornerWidth: r, cornerHeight: r)
+        case "ellipse":
+            path.addEllipse(in: rect)
+        case "diamond":
+            path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+            path.closeSubpath()
+        case "line":
+            path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        case "arrow":
+            let y = rect.midY
+            let head = min(18, rect.width * 0.3)
+            path.move(to: CGPoint(x: rect.minX, y: y))
+            path.addLine(to: CGPoint(x: rect.maxX, y: y))
+            path.move(to: CGPoint(x: rect.maxX - head, y: y - head * 0.7))
+            path.addLine(to: CGPoint(x: rect.maxX, y: y))
+            path.addLine(to: CGPoint(x: rect.maxX - head, y: y + head * 0.7))
+        default:
+            path.addRect(rect)
+        }
+        cg.saveGState()
+        cg.setStrokeColor((uiColor(hex: element.colorHex) ?? UIColor.systemBlue).cgColor)
+        cg.setLineWidth(3)
+        cg.setLineJoin(.round)
+        cg.setLineCap(.round)
+        cg.addPath(path)
+        cg.strokePath()
+        cg.restoreGState()
     }
 
     // MARK: - Desenho de uma caixa de texto
