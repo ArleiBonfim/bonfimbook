@@ -87,8 +87,36 @@ struct PenToolbarView: View {
             penButton(.pen, symbol: "pencil.tip", label: "Caneta")
             penButton(.marker, symbol: "highlighter", label: "Marca-texto")
             penButton(.pencil, symbol: "pencil", label: "Lápis")
-            penButton(.eraser, symbol: "eraser", label: "Borracha")
+            eraserMenu
         }
+    }
+
+    /// Borracha com DUAS formas: esfregar para apagar pedaço, ou tocar para sumir o traço
+    /// inteiro. Toque abre o menu; fica destacada quando alguma borracha está ativa.
+    private var eraserMenu: some View {
+        let active = controller.toolKind == .eraser || controller.toolKind == .eraserBitmap
+        return Menu {
+            Button {
+                controller.selectInk(.eraserBitmap)
+                showHint("Apagar esfregando")
+            } label: {
+                Label("Apagar esfregando (pedaço)", systemImage: "eraser")
+            }
+            Button {
+                controller.selectInk(.eraser)
+                showHint("Apagar traço inteiro")
+            } label: {
+                Label("Apagar traço inteiro (tocar)", systemImage: "eraser.line.dashed")
+            }
+        } label: {
+            Image(systemName: "eraser")
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 34, height: 30)
+                .background(active ? Color.accentColor.opacity(0.22) : .clear,
+                            in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(active ? Color.accentColor : .primary)
+        }
+        .accessibilityLabel("Borracha")
     }
 
     /// Menu com as canetas extras (estilos menos comuns). Fica destacado quando uma delas
@@ -191,6 +219,7 @@ struct PenToolbarView: View {
     private func colorSwatch(_ color: Color) -> some View {
         let active = controller.inkColor == color
                      && controller.toolKind != .eraser
+                     && controller.toolKind != .eraserBitmap
                      && controller.toolKind != .lasso
         return Button {
             controller.selectColor(color)
@@ -221,6 +250,7 @@ struct PenToolbarView: View {
     private func widthButton(_ width: CGFloat, index: Int) -> some View {
         let active = controller.lineWidth == width
                      && controller.toolKind != .eraser
+                     && controller.toolKind != .eraserBitmap
                      && controller.toolKind != .lasso
         // Ponto que cresce com a espessura, para leitura visual rápida (limitado p/ caber).
         let dot = min(5 + CGFloat(index) * 4, 22)

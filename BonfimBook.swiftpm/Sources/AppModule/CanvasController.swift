@@ -9,10 +9,11 @@ enum PenKind: String, CaseIterable {
     case pencil      // lápis
     case fountainPen // caneta tinteiro (varia com a pressão)
     case monoline    // monolinha (espessura constante)
-    case crayon      // giz de cera
-    case watercolor  // aquarela
-    case eraser      // borracha (apaga o traço inteiro — "apagar rabiscando")
-    case lasso       // laço (selecionar/mover traços)
+    case crayon       // giz de cera
+    case watercolor   // aquarela
+    case eraser       // borracha de OBJETO: toca/cruza um traço e ele some inteiro
+    case eraserBitmap // borracha de PEDAÇO: esfrega e apaga só onde passou
+    case lasso        // laço (selecionar/mover traços)
 }
 
 /// Controlador leve de Undo/Redo do canvas de desenho.
@@ -126,8 +127,15 @@ final class CanvasController: ObservableObject {
                 canvas.tool = PKInkingTool(.marker, color: color, width: max(lineWidth * 2, 12))
             }
         case .eraser:
-            // Borracha de OBJETO: passa por cima e o traço inteiro some (apagar rabiscando).
+            // Borracha de OBJETO: toca/cruza um traço e ele some inteiro.
             canvas.tool = PKEraserTool(.vector)
+        case .eraserBitmap:
+            // Borracha de PEDAÇO: apaga só onde a ponta esfrega (com uma largura).
+            if #available(iOS 16.4, *) {
+                canvas.tool = PKEraserTool(.bitmap, width: 24)
+            } else {
+                canvas.tool = PKEraserTool(.bitmap)
+            }
         case .lasso:
             canvas.tool = PKLassoTool()
         }
@@ -143,14 +151,14 @@ final class CanvasController: ObservableObject {
     /// escolher cor querendo escrever). Aplica na hora.
     func selectColor(_ color: Color) {
         inkColor = color
-        if toolKind == .eraser || toolKind == .lasso { toolKind = .pen }
+        if toolKind == .eraser || toolKind == .eraserBitmap || toolKind == .lasso { toolKind = .pen }
         applyTool()
     }
 
     /// Define a espessura atual e aplica na hora.
     func selectWidth(_ width: CGFloat) {
         lineWidth = width
-        if toolKind == .eraser || toolKind == .lasso { toolKind = .pen }
+        if toolKind == .eraser || toolKind == .eraserBitmap || toolKind == .lasso { toolKind = .pen }
         applyTool()
     }
 

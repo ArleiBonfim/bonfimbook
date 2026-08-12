@@ -250,12 +250,12 @@ struct NotebookView: View {
             }
             .confirmationDialog("Gerar imagem", isPresented: $showGenerateChoice, titleVisibility: .visible) {
                 if appleImageGenAvailable {
-                    Button("No iPad (Apple) — melhor qualidade") { showAppleGen = true }
+                    Button("✨ No iPad (Apple) — melhor qualidade") { showAppleGen = true }
                 }
-                Button("Online (grátis)") { aiPrompt = ""; showAIPrompt = true }
+                Button("Online (grátis, qualidade simples)") { aiPrompt = ""; showAIPrompt = true }
                 Button("Cancelar", role: .cancel) {}
             } message: {
-                Text("O gerador da Apple roda no seu iPad, entende melhor e é privado. O online é grátis, mas mais simples.")
+                Text("Recomendo o da Apple: roda no seu iPad, entende melhor e sai mais bonito. O online é grátis mas o resultado é básico/embaçado.")
             }
             .confirmationDialog("Organizar anotação", isPresented: $showOrganizeChoice, titleVisibility: .visible) {
                 if AppleTextAI.available {

@@ -30,7 +30,7 @@ enum AIImageService {
     /// uma IA antes de gerar — resolve muito o "saiu nada a ver") e o modelo `flux` (o de
     /// melhor qualidade), em resolução 1024.
     static func generate(prompt: String,
-                         style: String = "cute clipart cartoon illustration, flat vector, bold clean outline, bright colors, centered, plain white background",
+                         style: String = "flat vector illustration, clean simple shapes, solid colors, bold outline, sticker, plain white background",
                          size: Int = 1024) async throws -> Data {
         // O modelo entende MUITO melhor em inglês. Traduzimos/reescrevemos o pedido do usuário
         // (que pode estar em português) para um prompt curto em inglês antes de gerar. Se a
@@ -43,12 +43,13 @@ enum AIImageService {
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
         let encoded = full.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         // SEMENTE ALEATÓRIA: sem isto o serviço devolve SEMPRE a mesma imagem para o mesmo
-        // texto (ficava "cacheada") — por isso repetir o pedido dava sempre o mesmo resultado
-        // ruim. Com semente nova a cada vez, cada geração é diferente e dá pra tentar de novo.
-        // enhance=true deixa o servidor enriquecer o pedido (mais contexto).
+        // texto (ficava "cacheada"). Com semente nova a cada vez, dá pra tentar de novo e
+        // variar. Tiramos o `enhance` porque, no modelo grátis, ele tende a sujar o fundo.
+        // Obs.: o modelo anônimo grátis é limitado (imagem meio "borrada"); a opção de
+        // qualidade é o gerador da Apple no próprio iPad.
         let seed = Int.random(in: 0...9_999_999)
         let urlString = "https://image.pollinations.ai/prompt/\(encoded)"
-            + "?width=\(size)&height=\(size)&model=flux&nologo=true&enhance=true&seed=\(seed)"
+            + "?width=\(size)&height=\(size)&model=flux&nologo=true&seed=\(seed)"
 
         guard let url = URL(string: urlString) else { throw AIError.badURL }
 
