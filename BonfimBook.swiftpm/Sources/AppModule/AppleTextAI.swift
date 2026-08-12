@@ -25,9 +25,11 @@ enum AppleTextAI {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             let prompt =
-            "Organize e melhore o texto abaixo em portugues do Brasil: corrija erros, "
-            + "estruture com clareza (topicos quando fizer sentido) e mantenha o significado. "
-            + "Responda apenas com o texto final.\n\n" + text
+            "Reestruture e alinhe as anotacoes abaixo (portugues do Brasil), SEM reescrever nem "
+            + "resumir. Mantenha EXATAMENTE as mesmas palavras e informacoes; apenas organize o "
+            + "layout: separe em titulos e topicos com marcadores, agrupe itens relacionados, "
+            + "arrume espacamento, quebras de linha e pontuacao. Nao invente conteudo, nao "
+            + "explique, nao mude o sentido. Responda apenas com as anotacoes reorganizadas.\n\n" + text
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt)
             return response.content

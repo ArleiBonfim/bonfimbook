@@ -29,6 +29,10 @@ struct PenToolbarView: View {
     /// Espessuras rápidas: de bem fina a bem grossa.
     private static let widths: [CGFloat] = [1, 3, 6, 10, 16]
 
+    /// Balãozinho com o nome do que foi tocado (some sozinho).
+    @State private var hint: String?
+    @State private var hintSeq = 0
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -47,6 +51,31 @@ struct PenToolbarView: View {
             .padding(.vertical, 6)
         }
         .background(.thinMaterial)
+        .overlay(alignment: .bottomLeading) {
+            if let hint {
+                Text(hint)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.black.opacity(0.82)))
+                    .padding(.leading, 12)
+                    .offset(y: 28)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Mostra o balãozinho por ~1,4s. Um contador cancela o timer anterior se você tocar em
+    /// outro botão antes de sumir.
+    private func showHint(_ text: String) {
+        hintSeq += 1
+        let seq = hintSeq
+        withAnimation(.easeOut(duration: 0.15)) { hint = text }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            if seq == hintSeq { withAnimation { hint = nil } }
+        }
     }
 
     // MARK: - Grupos
@@ -85,6 +114,7 @@ struct PenToolbarView: View {
     private func inkMenuItem(_ kind: PenKind, _ title: String, _ symbol: String) -> some View {
         Button {
             controller.selectInk(kind)
+            showHint(title)
         } label: {
             if controller.toolKind == kind {
                 Label("\(title) ✓", systemImage: symbol)
@@ -134,6 +164,7 @@ struct PenToolbarView: View {
         let active = controller.toolKind == kind
         return Button {
             controller.selectInk(kind)
+            showHint(label)
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 18, weight: .medium))
@@ -152,6 +183,7 @@ struct PenToolbarView: View {
                      && controller.toolKind != .lasso
         return Button {
             controller.selectColor(color)
+            showHint("Cor")
         } label: {
             Circle()
                 .fill(color)
@@ -181,8 +213,10 @@ struct PenToolbarView: View {
                      && controller.toolKind != .lasso
         // Ponto que cresce com a espessura, para leitura visual rápida (limitado p/ caber).
         let dot = min(5 + CGFloat(index) * 4, 22)
+        let names = ["Bem fina", "Fina", "Média", "Grossa", "Bem grossa"]
         return Button {
             controller.selectWidth(width)
+            showHint(index < names.count ? names[index] : "Espessura")
         } label: {
             Circle()
                 .fill(active ? Color.accentColor : Color.primary)
@@ -201,6 +235,7 @@ struct PenToolbarView: View {
         Button {
             controller.useSystemPicker = true
             controller.syncPickerVisibility()
+            showHint("Paleta da Apple")
         } label: {
             Image(systemName: "paintpalette")
                 .font(.system(size: 18, weight: .medium))

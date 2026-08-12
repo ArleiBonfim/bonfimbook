@@ -42,8 +42,11 @@ enum AIImageService {
         // Codifica o texto para caber no caminho da URL (sem "/", "?", "#").
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
         let encoded = full.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+        // enhance=true: o próprio servidor EXPANDE o pedido com uma IA antes de gerar (ex.:
+        // "star" vira uma descrição rica de estrela). Como agora a tradução é confiável, isso
+        // dá o "contexto maior" que melhora bastante o resultado, sem inventar coisa errada.
         let urlString = "https://image.pollinations.ai/prompt/\(encoded)"
-            + "?width=\(size)&height=\(size)&model=flux&nologo=true"
+            + "?width=\(size)&height=\(size)&model=flux&nologo=true&enhance=true"
 
         guard let url = URL(string: urlString) else { throw AIError.badURL }
 
@@ -58,20 +61,19 @@ enum AIImageService {
         return data
     }
 
-    /// Resposta do MyMemory (tradutor grátis, sem chave).
-    private struct MyMemoryResponse: Decodable {
-        struct ResponseData: Decodable { let translatedText: String }
-        let responseData: ResponseData
-    }
-
-    /// Traduz o texto de português para inglês usando o MyMemory (grátis, sem cadastro). O
-    /// modelo de imagem entende MUITO melhor em inglês; traduzir aqui é o que faz "coroa de
-    /// rei" virar uma coroa de verdade. Retorna nil se falhar (aí seguimos com o original).
+    /// Traduz o texto de português para inglês usando o endpoint público do Google Tradutor
+    /// (grátis, sem cadastro). É bem mais confiável que o tradutor anterior — que chegou a
+    /// devolver "star smiley" para "estrela" e estragava a imagem. O modelo de imagem entende
+    /// MUITO melhor em inglês; traduzir aqui é o que faz "estrela" virar uma estrela de verdade.
+    /// Retorna nil se falhar (aí seguimos com o texto original).
+    ///
+    /// A resposta é um array aninhado de JSON: `[[["star","estrela",...], ...], ...]`. Juntamos
+    /// todos os pedaços traduzidos (posição [0][i][0]) para cobrir frases com mais de um trecho.
     private static func translateToEnglish(_ text: String) async -> String? {
         guard !text.isEmpty else { return nil }
         let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+="))
         guard let q = text.addingPercentEncoding(withAllowedCharacters: allowed),
-              let url = URL(string: "https://api.mymemory.translated.net/get?q=\(q)&langpair=pt%7Cen") else {
+              let url = URL(string: "https://translate.googleapis.com/translate_a/single?client=gtx&sl=pt&tl=en&dt=t&q=\(q)") else {
             return nil
         }
         var request = URLRequest(url: url)
@@ -79,10 +81,17 @@ enum AIImageService {
 
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              let decoded = try? JSONDecoder().decode(MyMemoryResponse.self, from: data) else {
+              let root = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              let sentences = root.first as? [Any] else {
             return nil
         }
-        let translated = decoded.responseData.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var result = ""
+        for sentence in sentences {
+            if let pair = sentence as? [Any], let piece = pair.first as? String {
+                result += piece
+            }
+        }
+        let translated = result.trimmingCharacters(in: .whitespacesAndNewlines)
         return translated.isEmpty ? nil : translated
     }
 }

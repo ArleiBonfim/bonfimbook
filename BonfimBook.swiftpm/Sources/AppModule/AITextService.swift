@@ -22,9 +22,11 @@ enum AITextService {
     static func organize(_ text: String) async throws -> String {
         let capped = String(text.prefix(1800))
         let instruction =
-        "Organize e melhore o texto abaixo em portugues do Brasil: corrija erros, "
-        + "estruture com clareza (topicos quando fizer sentido) e mantenha o significado. "
-        + "Responda apenas com o texto final, sem comentarios.\n\n" + capped
+        "Reestruture e alinhe as anotacoes abaixo (portugues do Brasil), SEM reescrever nem "
+        + "resumir. Mantenha EXATAMENTE as mesmas palavras e informacoes; apenas organize o "
+        + "layout: separe em titulos e topicos com marcadores, agrupe itens relacionados, "
+        + "arrume espacamento, quebras de linha e pontuacao. Nao invente conteudo, nao explique, "
+        + "nao mude o sentido. Responda apenas com as anotacoes reorganizadas.\n\n" + capped
 
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
         let encoded = instruction.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""

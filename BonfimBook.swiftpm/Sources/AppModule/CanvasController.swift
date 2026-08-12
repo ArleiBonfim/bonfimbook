@@ -195,27 +195,34 @@ final class CanvasController: ObservableObject {
         refresh()
     }
 
-    /// Suaviza cada traço por média móvel (janela 3) das posições dos pontos de controle,
-    /// preservando os demais atributos (tempo, tamanho, opacidade, força, inclinação).
+    /// Quantas vezes aplicamos a média móvel. Mais passagens = traço visivelmente mais liso.
+    private static let smoothingPasses = 5
+
+    /// Suaviza cada traço por VÁRIAS passagens de média móvel (janela 5) sobre as posições dos
+    /// pontos de controle, preservando os demais atributos (tempo, tamanho, opacidade, força,
+    /// inclinação). Uma passagem só quase não se nota; repetir deixa a diferença clara.
     private static func smoothed(_ drawing: PKDrawing) -> PKDrawing {
         var newStrokes: [PKStroke] = []
         for stroke in drawing.strokes {
             let pts = Array(stroke.path)
             // Traços muito curtos não têm o que suavizar sem distorcer.
-            guard pts.count >= 3 else {
+            guard pts.count >= 4 else {
                 newStrokes.append(stroke)
                 continue
             }
+
+            // Trabalha só nas posições; os atributos ficam colados ao índice original.
+            var locations = pts.map { $0.location }
+            for _ in 0..<smoothingPasses {
+                locations = averagePass(locations)
+            }
+
             var smoothedPts: [PKStrokePoint] = []
             smoothedPts.reserveCapacity(pts.count)
             for i in pts.indices {
-                let prev = pts[max(0, i - 1)]
                 let cur = pts[i]
-                let next = pts[min(pts.count - 1, i + 1)]
-                let avg = CGPoint(x: (prev.location.x + cur.location.x + next.location.x) / 3,
-                                  y: (prev.location.y + cur.location.y + next.location.y) / 3)
                 smoothedPts.append(
-                    PKStrokePoint(location: avg,
+                    PKStrokePoint(location: locations[i],
                                   timeOffset: cur.timeOffset,
                                   size: cur.size,
                                   opacity: cur.opacity,
@@ -229,6 +236,23 @@ final class CanvasController: ObservableObject {
             newStrokes.append(newStroke)
         }
         return PKDrawing(strokes: newStrokes)
+    }
+
+    /// Uma passagem de média móvel (janela 5) mantendo as pontas fixas (para o traço não
+    /// "encolher" nas extremidades).
+    private static func averagePass(_ points: [CGPoint]) -> [CGPoint] {
+        guard points.count >= 4 else { return points }
+        var out = points
+        for i in 1..<(points.count - 1) {
+            let a = points[max(0, i - 2)]
+            let b = points[i - 1]
+            let c = points[i]
+            let d = points[i + 1]
+            let e = points[min(points.count - 1, i + 2)]
+            out[i] = CGPoint(x: (a.x + b.x + c.x + d.x + e.x) / 5,
+                             y: (a.y + b.y + c.y + d.y + e.y) / 5)
+        }
+        return out
     }
 
     /// Sincroniza `canUndo`/`canRedo` com o `UndoManager` do canvas.

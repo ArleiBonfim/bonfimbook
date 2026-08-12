@@ -29,6 +29,12 @@ struct PKCanvasRepresentable: UIViewRepresentable {
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
 
+        // IMPORTANTíssimo: o papel é SEMPRE claro. Sem isto, no modo escuro do iPad o
+        // PencilKit inverte a tinta (preto vira branco) achando que o fundo é escuro — e a
+        // escrita some no papel claro / no PDF branco. Forçar o canvas ao estilo CLARO faz
+        // a tinta preta continuar preta, independentemente do modo do sistema.
+        canvas.overrideUserInterfaceStyle = .light
+
         // Habilita pinça-para-zoom do desenho. `PKCanvasView` é subclasse de
         // `UIScrollView`, então basta configurar a escala mínima/máxima e o "bounce".
         canvas.minimumZoomScale = 1.0

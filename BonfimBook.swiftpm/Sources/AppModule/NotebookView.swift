@@ -94,6 +94,10 @@ struct NotebookView: View {
                 )
                 Divider()
             }
+            if imageEditMode || studyMode {
+                modeBanner
+                Divider()
+            }
             pageArea
             Divider()
             bottomBar
@@ -295,6 +299,28 @@ struct NotebookView: View {
                 )
             }
         }
+    }
+
+    /// Faixa que avisa qual modo especial está ligado (imagem/estudo), onde a caneta NÃO
+    /// escreve — assim ninguém fica preso sem entender por que não consegue riscar.
+    private var modeBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: imageEditMode ? "hand.point.up.left.fill" : "eye.fill")
+            Text(imageEditMode
+                 ? "Modo mover imagens — a caneta não escreve aqui."
+                 : "Modo estudo — a caneta não escreve aqui.")
+                .font(.caption.weight(.medium))
+            Spacer()
+            Button("Voltar a escrever") {
+                imageEditMode = false
+                studyMode = false
+                selectedElementID = nil
+            }
+            .font(.caption.weight(.semibold))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(Color.accentColor.opacity(0.12))
     }
 
     // MARK: - Barra superior
@@ -623,6 +649,11 @@ struct NotebookView: View {
     private func loadElements() {
         elements = currentPage?.elements ?? []
         selectedElementID = nil
+        // Toda página abre no modo ESCREVER. Sem isto, o "modo imagem"/"modo estudo" (que
+        // desligam a caneta) ficavam presos ao trocar de página — e a pessoa não conseguia
+        // riscar (ex.: numa página de PDF recém-importada). Bug do "não deixa riscar".
+        imageEditMode = false
+        studyMode = false
         // Cada página começa em 100%. O canvas é recriado ao trocar de página (.id), então
         // zeramos o zoom espelhado para o papel não herdar o zoom da página anterior.
         canvasController.resetZoom()
