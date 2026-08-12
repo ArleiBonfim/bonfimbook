@@ -49,6 +49,10 @@ struct NotebookView: View {
     @State private var showScanner = false
     @State private var showRename = false
     @State private var renameText = ""
+    // Backup / restauração (também acessível aqui dentro, não só na tela inicial).
+    @State private var showBackupOptions = false
+    @State private var showRestore = false
+    @State private var backupInfo: String?
     // Edição de caixa de texto.
     @State private var editingTextElementID: String?
     @State private var editingText = ""
@@ -60,6 +64,7 @@ struct NotebookView: View {
     @State private var aiPrompt = ""
     @State private var isGenerating = false
     @State private var showAppleGen = false
+    @State private var showGenerateChoice = false
     // Organizar anotação (IA de texto).
     @State private var showOrganizeChoice = false
     @State private var isOrganizing = false
@@ -90,7 +95,7 @@ struct NotebookView: View {
                     onPasteImage: { pasteImage() },
                     onAddCover: { insertCover() },
                     onSmooth: { canvasController.smoothStrokes() },
-                    onGenerateImage: { aiPrompt = ""; showAIPrompt = true }
+                    onGenerateImage: { startGenerateImage() }
                 )
                 Divider()
             }
@@ -164,6 +169,13 @@ struct NotebookView: View {
             .sheet(isPresented: $showAIPrompt) {
                 AIPromptSheet(text: $aiPrompt) { generateOnlineImage() }
             }
+            .sheet(isPresented: $showRestore) {
+                RestoreView(
+                    backup: backup,
+                    libraryRoot: (try? NotebookLibrary.defaultDirectory()) ?? URL(fileURLWithPath: NSTemporaryDirectory()),
+                    onFinished: {}
+                )
+            }
     }
 
     private func withNotebookAlerts<V: View>(_ v: V) -> some View {
@@ -197,6 +209,28 @@ struct NotebookView: View {
                 Button("OK", role: .cancel) { errorMessage = nil }
             } message: { msg in
                 Text(msg)
+            }
+            .confirmationDialog("Backup dos seus cadernos", isPresented: $showBackupOptions, titleVisibility: .visible) {
+                Button("Escolher pasta de backup (iCloud)") { chooseBackupFolder() }
+                Button("Fazer backup agora") { backupNow() }
+                Button("Restaurar do backup") { showRestore = true }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Guarde uma cópia de TODOS os cadernos numa pasta do iCloud Drive, fora do app. Assim, mesmo que o app seja apagado, suas anotações continuam salvas.")
+            }
+            .alert("Backup", isPresented: Binding(get: { backupInfo != nil }, set: { if !$0 { backupInfo = nil } }), presenting: backupInfo) { _ in
+                Button("OK", role: .cancel) { backupInfo = nil }
+            } message: { msg in
+                Text(msg)
+            }
+            .confirmationDialog("Gerar imagem", isPresented: $showGenerateChoice, titleVisibility: .visible) {
+                if appleImageGenAvailable {
+                    Button("No iPad (Apple) — melhor qualidade") { showAppleGen = true }
+                }
+                Button("Online (grátis)") { aiPrompt = ""; showAIPrompt = true }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("O gerador da Apple roda no seu iPad, entende melhor e é privado. O online é grátis, mas mais simples.")
             }
             .confirmationDialog("Organizar anotação", isPresented: $showOrganizeChoice, titleVisibility: .visible) {
                 if AppleTextAI.available {
@@ -615,18 +649,9 @@ struct NotebookView: View {
             Divider()
 
             Button {
-                aiPrompt = ""
-                showAIPrompt = true
+                startGenerateImage()
             } label: {
-                Label("Gerar imagem (online grátis)", systemImage: "globe")
-            }
-
-            if appleImageGenAvailable {
-                Button {
-                    showAppleGen = true
-                } label: {
-                    Label("Gerar imagem no iPad (Apple)", systemImage: "sparkles")
-                }
+                Label("Gerar imagem (IA)", systemImage: "sparkles")
             }
 
             Button {
@@ -654,6 +679,12 @@ struct NotebookView: View {
                 showRename = true
             } label: {
                 Label("Renomear caderno", systemImage: "pencil")
+            }
+
+            Button {
+                showBackupOptions = true
+            } label: {
+                Label("Backup e restauração (iCloud)", systemImage: "externaldrive.badge.icloud")
             }
 
             Picker("Entrada", selection: $drawingPolicy) {
@@ -1081,6 +1112,46 @@ struct NotebookView: View {
             insertImage(data: data, ext: "png")
         } else {
             errorMessage = "Não encontrei imagem copiada. Copie uma imagem (ex.: no Safari, segure a imagem → Copiar) e tente de novo."
+        }
+    }
+
+    /// Abre o seletor de pasta do sistema para escolher onde guardar o backup (iCloud Drive).
+    private func chooseBackupFolder() {
+        guard let vc = Self.topViewController() else {
+            errorMessage = "Não consegui abrir o seletor de pasta agora. Tente de novo."
+            return
+        }
+        backup.chooseFolder(presenting: vc)
+    }
+
+    /// Copia todos os cadernos para a pasta escolhida (e uma cópia local de segurança).
+    private func backupNow() {
+        let root = (try? NotebookLibrary.defaultDirectory()) ?? store.packageURL.deletingLastPathComponent()
+        backup.backupEverything(libraryRoot: root)
+        backupInfo = backup.hasFolder()
+            ? "Backup em andamento. Quando a bolinha ficar verde, está tudo salvo na sua pasta."
+            : "Fiz uma cópia local de segurança. Para proteger contra apagar o app, toque em \u{201C}Escolher pasta de backup (iCloud)\u{201D}."
+    }
+
+    /// Acha a tela ativa para apresentar o seletor de pasta.
+    private static func topViewController() -> UIViewController? {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        let window = scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
+    }
+
+    /// Começa a gerar imagem: se o iPad tem o gerador da Apple (melhor), pergunta qual usar;
+    /// senão vai direto pro online grátis.
+    private func startGenerateImage() {
+        if appleImageGenAvailable {
+            showGenerateChoice = true
+        } else {
+            aiPrompt = ""
+            showAIPrompt = true
         }
     }
 

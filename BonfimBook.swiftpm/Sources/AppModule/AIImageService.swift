@@ -30,7 +30,7 @@ enum AIImageService {
     /// uma IA antes de gerar — resolve muito o "saiu nada a ver") e o modelo `flux` (o de
     /// melhor qualidade), em resolução 1024.
     static func generate(prompt: String,
-                         style: String = "detailed vector sticker illustration, vibrant colors, thick clean outline, soft shadow, high quality, centered, white background",
+                         style: String = "cute clipart cartoon illustration, flat vector, bold clean outline, bright colors, centered, plain white background",
                          size: Int = 1024) async throws -> Data {
         // O modelo entende MUITO melhor em inglês. Traduzimos/reescrevemos o pedido do usuário
         // (que pode estar em português) para um prompt curto em inglês antes de gerar. Se a
@@ -42,11 +42,13 @@ enum AIImageService {
         // Codifica o texto para caber no caminho da URL (sem "/", "?", "#").
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
         let encoded = full.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-        // enhance=true: o próprio servidor EXPANDE o pedido com uma IA antes de gerar (ex.:
-        // "star" vira uma descrição rica de estrela). Como agora a tradução é confiável, isso
-        // dá o "contexto maior" que melhora bastante o resultado, sem inventar coisa errada.
+        // SEMENTE ALEATÓRIA: sem isto o serviço devolve SEMPRE a mesma imagem para o mesmo
+        // texto (ficava "cacheada") — por isso repetir o pedido dava sempre o mesmo resultado
+        // ruim. Com semente nova a cada vez, cada geração é diferente e dá pra tentar de novo.
+        // enhance=true deixa o servidor enriquecer o pedido (mais contexto).
+        let seed = Int.random(in: 0...9_999_999)
         let urlString = "https://image.pollinations.ai/prompt/\(encoded)"
-            + "?width=\(size)&height=\(size)&model=flux&nologo=true&enhance=true"
+            + "?width=\(size)&height=\(size)&model=flux&nologo=true&enhance=true&seed=\(seed)"
 
         guard let url = URL(string: urlString) else { throw AIError.badURL }
 
