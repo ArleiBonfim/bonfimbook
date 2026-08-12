@@ -15,6 +15,7 @@ public struct PageElement: Codable, Equatable, Identifiable {
         case image
         case text
         case cover   // anteparo de estudo: retângulo opaco que tampa a informação
+        case shape   // forma de fluxograma (retângulo, losango, elipse, seta, linha)
     }
 
     public var id: String        // UUID().uuidString
@@ -32,7 +33,11 @@ public struct PageElement: Codable, Equatable, Identifiable {
     // objetos antigos (imagens) decodificam com estes nil, sem bump de schema.
     public var text: String?     // conteúdo digitado
     public var fontSize: Double? // tamanho da fonte em pontos
-    public var colorHex: String? // cor do texto, ex.: "#000000"
+    public var colorHex: String? // cor do texto/forma, ex.: "#000000"
+
+    // Campo de FORMA (só quando kind == .shape). Opcional e compat retroativa: objetos antigos
+    // decodificam com nil. Valores: "rect", "roundrect", "diamond", "ellipse", "arrow", "line".
+    public var shapeType: String?
 
     public init(id: String = UUID().uuidString,
                 kind: Kind = .image,
@@ -42,7 +47,8 @@ public struct PageElement: Codable, Equatable, Identifiable {
                 rotation: Double = 0,
                 text: String? = nil,
                 fontSize: Double? = nil,
-                colorHex: String? = nil) {
+                colorHex: String? = nil,
+                shapeType: String? = nil) {
         self.id = id
         self.kind = kind
         self.assetID = assetID
@@ -54,5 +60,6 @@ public struct PageElement: Codable, Equatable, Identifiable {
         self.text = text
         self.fontSize = fontSize
         self.colorHex = colorHex
+        self.shapeType = shapeType
     }
 }

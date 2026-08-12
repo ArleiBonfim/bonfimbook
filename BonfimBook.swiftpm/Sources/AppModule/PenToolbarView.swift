@@ -20,6 +20,7 @@ struct PenToolbarView: View {
     var onAddCover: () -> Void
     var onSmooth: () -> Void
     var onGenerateImage: () -> Void
+    var onInsertShape: (String) -> Void = { _ in }
 
     /// Paleta de cores rápidas da barra (as mais usadas). Qualquer outra cor sai no seletor.
     private static let quickColors: [Color] = [
@@ -143,6 +144,16 @@ struct PenToolbarView: View {
     private var actionsMenu: some View {
         Menu {
             Button { onInsertText() } label: { Label("Caixa de texto", systemImage: "textbox") }
+            Menu {
+                Button { onInsertShape("rect") } label: { Label("Retângulo", systemImage: "rectangle") }
+                Button { onInsertShape("roundrect") } label: { Label("Retângulo arredondado", systemImage: "rectangle.roundedtop") }
+                Button { onInsertShape("diamond") } label: { Label("Losango (decisão)", systemImage: "diamond") }
+                Button { onInsertShape("ellipse") } label: { Label("Elipse (início/fim)", systemImage: "oval") }
+                Button { onInsertShape("arrow") } label: { Label("Seta", systemImage: "arrow.right") }
+                Button { onInsertShape("line") } label: { Label("Linha", systemImage: "line.diagonal") }
+            } label: {
+                Label("Forma (fluxograma)", systemImage: "flowchart")
+            }
             Button { onInsertImage() } label: { Label("Imagem da galeria", systemImage: "photo") }
             Button { onPasteImage() } label: { Label("Colar imagem", systemImage: "doc.on.clipboard") }
             Button { onAddCover() } label: { Label("Anteparo (estudo)", systemImage: "rectangle.slash") }

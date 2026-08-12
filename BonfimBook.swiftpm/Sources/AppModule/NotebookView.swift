@@ -98,7 +98,8 @@ struct NotebookView: View {
                     onPasteImage: { pasteImage() },
                     onAddCover: { insertCover() },
                     onSmooth: { canvasController.smoothStrokes() },
-                    onGenerateImage: { startGenerateImage() }
+                    onGenerateImage: { startGenerateImage() },
+                    onInsertShape: { type in insertShape(type) }
                 )
                 Divider()
             }
@@ -910,13 +911,38 @@ struct NotebookView: View {
             x: element.x + 24, y: element.y + 24,
             width: element.width, height: element.height,
             rotation: element.rotation, text: element.text,
-            fontSize: element.fontSize, colorHex: element.colorHex
+            fontSize: element.fontSize, colorHex: element.colorHex,
+            shapeType: element.shapeType
         )
         var newElements = elements
         newElements.append(copy)
         elements = newElements
         persistElements(newElements)
         selectedElementID = copy.id
+    }
+
+    /// Insere uma forma de fluxograma no centro da página e entra no modo mover para posicionar.
+    private func insertShape(_ type: String) {
+        guard currentPage != nil else { return }
+        let size = effectiveSize
+        let isThin = (type == "line" || type == "arrow")
+        let width = Double(size.width) * (isThin ? 0.34 : 0.26)
+        let height = isThin ? 46.0 : Double(size.width) * 0.16
+        let element = PageElement(
+            kind: .shape,
+            x: Double(size.width) / 2 - width / 2,
+            y: Double(size.height) / 2 - height / 2,
+            width: width,
+            height: height,
+            colorHex: "#1E6FE8",
+            shapeType: type
+        )
+        var newElements = elements
+        newElements.append(element)
+        elements = newElements
+        persistElements(newElements)
+        selectedElementID = element.id
+        imageEditMode = true
     }
 
     /// Gira o elemento em 90°.

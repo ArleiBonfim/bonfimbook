@@ -193,6 +193,8 @@ private struct ImageElementView: View {
         Group {
             if element.kind == .cover {
                 coverContent
+            } else if element.kind == .shape {
+                shapeContent
             } else if element.kind == .text {
                 textContent
             } else if let uiImage = loadedImage {
@@ -228,7 +230,7 @@ private struct ImageElementView: View {
             if element.kind == .text {
                 Button(action: onEdit) { Label("Editar texto", systemImage: "pencil") }
             }
-            if element.kind == .text || element.kind == .cover {
+            if element.kind == .text || element.kind == .cover || element.kind == .shape {
                 colorSubmenu
             }
             if element.kind == .image {
@@ -277,18 +279,30 @@ private struct ImageElementView: View {
     private var resizeDrag: some Gesture {
         DragGesture()
             .onChanged { value in
-                let newW = max(Self.minSide, element.width + Double(value.translation.width))
-                let ratio = element.width > 0 ? newW / element.width : 1
-                let newH = max(Self.minSide, element.height * ratio)
-                resizeSize = CGSize(width: newW, height: newH)
+                resizeSize = newSize(dw: Double(value.translation.width),
+                                     dh: Double(value.translation.height), clamp: false)
             }
             .onEnded { value in
-                let newW = clampSide(element.width + Double(value.translation.width))
-                let ratio = element.width > 0 ? newW / element.width : 1
-                let newH = clampSide(element.height * ratio)
-                onResize(newW, newH)
+                let s = newSize(dw: Double(value.translation.width),
+                                dh: Double(value.translation.height), clamp: true)
+                onResize(Double(s.width), Double(s.height))
                 resizeSize = nil
             }
+    }
+
+    /// Novo tamanho a partir do arraste. Imagens mantêm a proporção (não distorcem); texto,
+    /// formas e anteparos redimensionam livre (largura e altura independentes).
+    private func newSize(dw: Double, dh: Double, clamp: Bool) -> CGSize {
+        if element.kind == .image {
+            let w0 = clamp ? clampSide(element.width + dw) : max(Self.minSide, element.width + dw)
+            let ratio = element.width > 0 ? w0 / element.width : 1
+            let h0 = clamp ? clampSide(element.height * ratio) : max(Self.minSide, element.height * ratio)
+            return CGSize(width: w0, height: h0)
+        } else {
+            let w0 = clamp ? clampSide(element.width + dw) : max(Self.minSide, element.width + dw)
+            let h0 = clamp ? clampSide(element.height + dh) : max(Self.minSide, element.height + dh)
+            return CGSize(width: w0, height: h0)
+        }
     }
 
     /// Multiplica um lado por `factor`, mantendo dentro dos limites.
@@ -316,6 +330,17 @@ private struct ImageElementView: View {
                         .foregroundStyle(.white.opacity(0.75))
                 }
             }
+    }
+
+    /// Forma de fluxograma: contorno na cor escolhida, fundo quase transparente (dá pra
+    /// escrever dentro) e área toda tocável para mover/redimensionar.
+    private var shapeContent: some View {
+        let color = PageElementColor.from(hex: element.colorHex) ?? .blue
+        return FlowchartShape(type: element.shapeType ?? "rect")
+            .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+            .frame(width: displayWidth, height: displayHeight)
+            .background(Color.white.opacity(0.001))
+            .contentShape(Rectangle())
     }
 
     /// Botão "tirar fundo" (só em imagens selecionadas), canto inferior-direito.
@@ -434,6 +459,47 @@ private struct ImageElementView: View {
             scale = Self.maxSide / largestSide
         }
         return (element.width * scale, element.height * scale)
+    }
+}
+
+// MARK: - Formas de fluxograma
+
+/// Desenha a forma pedida dentro do retângulo dado. Usada com `.stroke` (contorno).
+struct FlowchartShape: Shape {
+    let type: String
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        // Margem para o contorno não ser cortado pela borda do frame.
+        let r = rect.insetBy(dx: 2, dy: 2)
+        switch type {
+        case "roundrect":
+            p.addRoundedRect(in: r, cornerSize: CGSize(width: min(r.width, r.height) * 0.2,
+                                                       height: min(r.width, r.height) * 0.2))
+        case "ellipse":
+            p.addEllipse(in: r)
+        case "diamond":
+            p.move(to: CGPoint(x: r.midX, y: r.minY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+            p.addLine(to: CGPoint(x: r.midX, y: r.maxY))
+            p.addLine(to: CGPoint(x: r.minX, y: r.midY))
+            p.closeSubpath()
+        case "line":
+            p.move(to: CGPoint(x: r.minX, y: r.midY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+        case "arrow":
+            // Linha da esquerda para a direita + ponta de seta.
+            let y = r.midY
+            p.move(to: CGPoint(x: r.minX, y: y))
+            p.addLine(to: CGPoint(x: r.maxX, y: y))
+            let head = min(18, r.width * 0.3)
+            p.move(to: CGPoint(x: r.maxX - head, y: y - head * 0.7))
+            p.addLine(to: CGPoint(x: r.maxX, y: y))
+            p.addLine(to: CGPoint(x: r.maxX - head, y: y + head * 0.7))
+        default: // "rect"
+            p.addRect(r)
+        }
+        return p
     }
 }
 
