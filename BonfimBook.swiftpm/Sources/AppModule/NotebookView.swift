@@ -250,12 +250,12 @@ struct NotebookView: View {
             }
             .confirmationDialog("Gerar imagem", isPresented: $showGenerateChoice, titleVisibility: .visible) {
                 if appleImageGenAvailable {
-                    Button("✨ No iPad (Apple) — melhor qualidade") { showAppleGen = true }
+                    Button("✨ No iPad (Apple) — privado") { showAppleGen = true }
                 }
-                Button("Online (grátis, qualidade simples)") { aiPrompt = ""; showAIPrompt = true }
+                Button("Online (FLUX, grátis)") { aiPrompt = ""; showAIPrompt = true }
                 Button("Cancelar", role: .cancel) {}
             } message: {
-                Text("Recomendo o da Apple: roda no seu iPad, entende melhor e sai mais bonito. O online é grátis mas o resultado é básico/embaçado.")
+                Text("Os dois ficaram bons. O da Apple roda no seu iPad (privado, não envia nada). O online (FLUX) é grátis e nítido, mas envia o texto para um serviço externo.")
             }
             .confirmationDialog("Organizar anotação", isPresented: $showOrganizeChoice, titleVisibility: .visible) {
                 if AppleTextAI.available {
@@ -1291,7 +1291,7 @@ struct NotebookView: View {
                 let data = try await AIImageService.generate(prompt: prompt)
                 await MainActor.run {
                     isGenerating = false
-                    insertImage(data: data, ext: "jpg")
+                    insertImage(data: data, ext: "png")
                 }
             } catch {
                 await MainActor.run {
