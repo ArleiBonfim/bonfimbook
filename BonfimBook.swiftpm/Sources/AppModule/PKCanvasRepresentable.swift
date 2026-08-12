@@ -62,6 +62,7 @@ struct PKCanvasRepresentable: UIViewRepresentable {
             controller.canvas = canvas
             controller.toolPicker = toolPicker
             controller.syncPickerVisibility()   // mostra paleta OU aplica a caneta da barra
+            canvas.isRulerActive = controller.rulerActive   // mantém a régua ao trocar de página
             controller.refresh()
         }
 

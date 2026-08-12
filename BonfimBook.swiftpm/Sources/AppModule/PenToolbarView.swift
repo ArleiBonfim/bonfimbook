@@ -45,6 +45,7 @@ struct PenToolbarView: View {
                 thinDivider
                 widthButtons
                 thinDivider
+                rulerButton
                 actionsMenu
                 fullPaletteButton
             }
@@ -237,6 +238,23 @@ struct PenToolbarView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Espessura")
+    }
+
+    /// Liga/desliga a régua nativa (traçar linhas retas apoiando a caneta).
+    private var rulerButton: some View {
+        Button {
+            controller.toggleRuler()
+            showHint(controller.rulerActive ? "Régua ligada" : "Régua desligada")
+        } label: {
+            Image(systemName: "ruler")
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 34, height: 30)
+                .background(controller.rulerActive ? Color.accentColor.opacity(0.22) : .clear,
+                            in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(controller.rulerActive ? Color.accentColor : .primary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Régua")
     }
 
     /// Abre a paleta COMPLETA da Apple (régua, mais canetas, opacidade). A barra fina some

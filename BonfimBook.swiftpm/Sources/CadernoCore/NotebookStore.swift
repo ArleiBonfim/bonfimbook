@@ -372,6 +372,21 @@ public final class NotebookStore {
         try saveManifest(manifest)
     }
 
+    /// Define (ou limpa, com texto vazio) o nome/título de uma página, para o índice.
+    public func setPageTitle(_ title: String, pageID: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        var meta = try readPageMeta(pageID)
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let now = Date()
+        meta.title = trimmed.isEmpty ? nil : trimmed
+        meta.updatedAt = now
+        try writeJSON(meta, to: pageMetaURL(pageID))
+
+        var manifest = try loadManifest()
+        manifest.updatedAt = now
+        try saveManifest(manifest)
+    }
+
     // MARK: - Objetos/imagens sobrepostos à página
 
     /// Substitui a lista de objetos (imagens etc.) de uma página e carimba `updatedAt`.

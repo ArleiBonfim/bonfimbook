@@ -16,10 +16,12 @@ public struct PageMeta: Codable, Equatable {
     public var background: PageBackground?
     // OPCIONAL, mesma regra: página marcada como favorita. nil/ausente = não favorita.
     public var favorite: Bool?
+    // OPCIONAL, mesma regra: nome/título da página (para o índice). nil/ausente = sem nome.
+    public var title: String?
 
     public init(id: String, createdAt: Date, updatedAt: Date, template: String,
                 elements: [PageElement]? = nil, background: PageBackground? = nil,
-                favorite: Bool? = nil) {
+                favorite: Bool? = nil, title: String? = nil) {
         self.id = id
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -27,5 +29,6 @@ public struct PageMeta: Codable, Equatable {
         self.elements = elements
         self.background = background
         self.favorite = favorite
+        self.title = title
     }
 }

@@ -74,6 +74,10 @@ struct NotebookView: View {
     @State private var isConverting = false
     // Busca dentro da letra (OCR).
     @State private var showSearch = false
+    // Índice / nome de página.
+    @State private var showIndex = false
+    @State private var showRenamePage = false
+    @State private var renamePageText = ""
 
     // Dimensões lógicas de referência quando ainda não sabemos o tamanho real da tela.
     private static let fallbackSize = CGSize(width: 768, height: 1024)
@@ -185,6 +189,11 @@ struct NotebookView: View {
                     goToPage(index)
                 }
             }
+            .sheet(isPresented: $showIndex) {
+                PageIndexView(pages: pages) { index in
+                    goToPage(index)
+                }
+            }
     }
 
     private func withNotebookAlerts<V: View>(_ v: V) -> some View {
@@ -195,6 +204,13 @@ struct NotebookView: View {
                 Button("Salvar") { commitRename() }
             } message: {
                 Text("Escolha um novo nome para este caderno.")
+            }
+            .alert("Nomear página", isPresented: $showRenamePage) {
+                TextField("Nome da página", text: $renamePageText)
+                Button("Cancelar", role: .cancel) {}
+                Button("Salvar") { commitPageRename() }
+            } message: {
+                Text("Esse nome aparece no índice para você achar a página rápido.")
             }
             .alert("Editar texto", isPresented: $showTextEditor) {
                 TextField("Texto", text: $editingText)
@@ -630,6 +646,19 @@ struct NotebookView: View {
             }
 
             Button {
+                showIndex = true
+            } label: {
+                Label("Índice de páginas", systemImage: "list.bullet")
+            }
+
+            Button {
+                renamePageText = currentPage?.title ?? ""
+                showRenamePage = true
+            } label: {
+                Label("Nomear esta página", systemImage: "character.cursor.ibeam")
+            }
+
+            Button {
                 showPDFImport = true
             } label: {
                 Label("Importar PDF", systemImage: "doc.badge.plus")
@@ -875,6 +904,16 @@ struct NotebookView: View {
         guard let page = currentPage else { return }
         try? store.deletePage(id: page.id)
         reload()
+    }
+
+    /// Salva o nome da página atual (vazio = remove o nome) e atualiza a memória local.
+    private func commitPageRename() {
+        guard let page = currentPage else { return }
+        try? store.setPageTitle(renamePageText, pageID: page.id)
+        let trimmed = renamePageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if pages.indices.contains(currentIndex) {
+            pages[currentIndex].title = trimmed.isEmpty ? nil : trimmed
+        }
     }
 
     /// Marca/desmarca a página atual como favorita.

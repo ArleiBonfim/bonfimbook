@@ -54,6 +54,16 @@ final class CanvasController: ObservableObject {
     /// desfazer). Opt-in — desligado não muda nada. A troca é feita no Coordinator.
     @Published var shapeMode: Bool = false
 
+    /// Régua nativa do PencilKit: quando ligada, a caneta se apoia nela para traçar linhas
+    /// retas (arraste a régua com dois dedos para posicionar/girar).
+    @Published var rulerActive: Bool = false
+
+    /// Liga/desliga a régua no canvas atual.
+    func toggleRuler() {
+        rulerActive.toggle()
+        canvas?.isRulerActive = rulerActive
+    }
+
     // MARK: - Zoom da PÁGINA INTEIRA (papel + imagens acompanham o traço)
 
     /// Espelham o zoom/rolagem do canvas para as camadas de trás (papel e imagens) seguirem
