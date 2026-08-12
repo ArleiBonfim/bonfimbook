@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import PencilKit
 
 /// Tipos de "caneta" oferecidos pela nossa barra fina (mesmos traços do PencilKit).
@@ -159,6 +160,164 @@ final class CanvasController: ObservableObject {
             applyTool()
         }
         canvas.becomeFirstResponder()
+    }
+
+    // MARK: - NOSSO laço (seleção de escrita) — resize/cor/mover/duplicar/apagar
+    //
+    // O PencilKit NÃO expõe a seleção do laço nativo, então construímos o nosso: o usuário
+    // cerca a escrita com um laço, achamos os traços dentro da área e aplicamos transformações
+    // reconstruindo o `PKDrawing`. Tudo reversível pelo desfazer.
+
+    /// Modo laço ligado (a UI mostra a camada de seleção por cima do canvas).
+    @Published var selectionActive: Bool = false
+    /// Retângulo que envolve a seleção atual (coordenadas do canvas), ou nil se nada selecionado.
+    @Published var selectionBounds: CGRect? = nil
+    /// Índices (na lista de traços do desenho) atualmente selecionados.
+    private var selectedIndices: [Int] = []
+    /// Snapshot para registrar UM desfazer durante um arraste contínuo (mover).
+    private var transformSnapshot: PKDrawing?
+
+    func beginSelectMode() { selectionActive = true; clearSelection() }
+    func endSelectMode() { selectionActive = false; clearSelection() }
+    func clearSelection() { selectedIndices = []; selectionBounds = nil }
+
+    var hasSelection: Bool { !selectedIndices.isEmpty }
+
+    /// Seleciona os traços cujos pontos caem, em maioria, DENTRO do laço desenhado.
+    func selectStrokes(inPolygon polygon: [CGPoint]) {
+        guard let canvas = canvas, polygon.count >= 3 else { clearSelection(); return }
+        let strokes = canvas.drawing.strokes
+        var indices: [Int] = []
+        for (i, stroke) in strokes.enumerated() {
+            let pts = Array(stroke.path).map { $0.location.applying(stroke.transform) }
+            guard !pts.isEmpty else { continue }
+            var inside = 0
+            for p in pts where Self.pointInPolygon(p, polygon) { inside += 1 }
+            if Double(inside) / Double(pts.count) >= 0.5 { indices.append(i) }
+        }
+        selectedIndices = indices
+        recomputeBounds()
+    }
+
+    /// Aumenta/diminui a seleção pelo fator (ex.: 1.2 = +20%), em torno do centro.
+    func scaleSelection(_ factor: CGFloat) {
+        guard let b = selectionBounds else { return }
+        let c = CGPoint(x: b.midX, y: b.midY)
+        let m = CGAffineTransform(translationX: c.x, y: c.y)
+            .scaledBy(x: factor, y: factor)
+            .translatedBy(x: -c.x, y: -c.y)
+        rebuildSelected(registerUndo: true) { s in
+            PKStroke(ink: s.ink, path: s.path, transform: s.transform.concatenating(m), mask: s.mask)
+        }
+    }
+
+    /// Troca a cor de toda a escrita selecionada.
+    func colorSelection(_ color: UIColor) {
+        rebuildSelected(registerUndo: true) { s in
+            PKStroke(ink: PKInk(s.ink.inkType, color: color), path: s.path,
+                     transform: s.transform, mask: s.mask)
+        }
+    }
+
+    /// Início/fim de um arraste contínuo de MOVER (um só desfazer para todo o gesto).
+    func beginTransform() { transformSnapshot = canvas?.drawing }
+    func endTransform() {
+        if let snap = transformSnapshot { registerUndo(snap) }
+        transformSnapshot = nil
+        recomputeBounds()
+    }
+
+    /// Move a seleção por um incremento (chamado a cada quadro do arraste; sem desfazer aqui).
+    func translateSelectionLive(dx: CGFloat, dy: CGFloat) {
+        let m = CGAffineTransform(translationX: dx, y: dy)
+        rebuildSelected(registerUndo: false) { s in
+            PKStroke(ink: s.ink, path: s.path, transform: s.transform.concatenating(m), mask: s.mask)
+        }
+    }
+
+    /// Apaga a escrita selecionada.
+    func deleteSelection() {
+        guard let canvas = canvas, !selectedIndices.isEmpty else { return }
+        let old = canvas.drawing
+        let set = Set(selectedIndices)
+        let strokes = old.strokes.enumerated().filter { !set.contains($0.offset) }.map { $0.element }
+        canvas.drawing = PKDrawing(strokes: strokes)
+        canvas.delegate?.canvasViewDrawingDidChange?(canvas)
+        registerUndo(old)
+        clearSelection()
+    }
+
+    /// Duplica a escrita selecionada (deslocada) e passa a selecionar as cópias.
+    func duplicateSelection() {
+        guard let canvas = canvas, !selectedIndices.isEmpty else { return }
+        let old = canvas.drawing
+        var strokes = old.strokes
+        let m = CGAffineTransform(translationX: 26, y: 26)
+        let start = strokes.count
+        for i in selectedIndices where old.strokes.indices.contains(i) {
+            let s = old.strokes[i]
+            strokes.append(PKStroke(ink: s.ink, path: s.path,
+                                    transform: s.transform.concatenating(m), mask: s.mask))
+        }
+        canvas.drawing = PKDrawing(strokes: strokes)
+        canvas.delegate?.canvasViewDrawingDidChange?(canvas)
+        registerUndo(old)
+        selectedIndices = Array(start..<strokes.count)
+        recomputeBounds()
+    }
+
+    // MARK: Auxiliares do laço
+
+    /// Reconstrói o desenho aplicando `transform` só aos traços selecionados.
+    private func rebuildSelected(registerUndo doUndo: Bool, _ transform: (PKStroke) -> PKStroke) {
+        guard let canvas = canvas, !selectedIndices.isEmpty else { return }
+        let old = canvas.drawing
+        var strokes = old.strokes
+        for i in selectedIndices where strokes.indices.contains(i) {
+            strokes[i] = transform(strokes[i])
+        }
+        canvas.drawing = PKDrawing(strokes: strokes)
+        canvas.delegate?.canvasViewDrawingDidChange?(canvas)
+        if doUndo { registerUndo(old) }
+        recomputeBounds()
+    }
+
+    /// Recalcula o retângulo que envolve a seleção (união dos limites dos traços).
+    private func recomputeBounds() {
+        guard let canvas = canvas, !selectedIndices.isEmpty else { selectionBounds = nil; return }
+        let strokes = canvas.drawing.strokes
+        var rect: CGRect?
+        for i in selectedIndices where strokes.indices.contains(i) {
+            let b = strokes[i].renderBounds
+            rect = (rect == nil) ? b : rect!.union(b)
+        }
+        selectionBounds = rect
+    }
+
+    /// Registra um desfazer que volta o desenho a `old`.
+    private func registerUndo(_ old: PKDrawing) {
+        guard let canvas = canvas else { return }
+        canvas.undoManager?.registerUndo(withTarget: canvas) { c in
+            c.drawing = old
+            c.delegate?.canvasViewDrawingDidChange?(c)
+        }
+        canvas.undoManager?.setActionName("Editar seleção")
+        refresh()
+    }
+
+    /// Teste ponto-dentro-do-polígono (ray casting), para saber o que o laço cercou.
+    private static func pointInPolygon(_ p: CGPoint, _ poly: [CGPoint]) -> Bool {
+        var inside = false
+        var j = poly.count - 1
+        for i in 0..<poly.count {
+            let a = poly[i], b = poly[j]
+            if (a.y > p.y) != (b.y > p.y),
+               p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+                inside.toggle()
+            }
+            j = i
+        }
+        return inside
     }
 
     /// Desfaz o último passo registrado no canvas e reavalia o estado dos botões.

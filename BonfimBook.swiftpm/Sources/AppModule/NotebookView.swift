@@ -98,6 +98,10 @@ struct NotebookView: View {
                 modeBanner
                 Divider()
             }
+            if canvasController.selectionActive {
+                selectBanner
+                Divider()
+            }
             pageArea
             Divider()
             bottomBar
@@ -221,6 +225,7 @@ struct NotebookView: View {
     /// e o usuário não pediu a paleta completa da Apple.
     private var showPenBar: Bool {
         !canvasController.useSystemPicker && !imageEditMode && !studyMode
+            && !canvasController.selectionActive
     }
 
     // MARK: - Área central (papel + imagens + canvas)
@@ -247,7 +252,7 @@ struct NotebookView: View {
                         drawingPolicy: $drawingPolicy,
                         controller: canvasController
                     )
-                    .allowsHitTesting(!imageEditMode && !studyMode)
+                    .allowsHitTesting(!imageEditMode && !studyMode && !canvasController.selectionActive)
                     // Recria o canvas ao trocar de página: garante a carga inicial correta
                     // e descarta qualquer debounce pendente da página anterior.
                     .id(page.id)
@@ -265,6 +270,12 @@ struct NotebookView: View {
                     .offset(x: -canvasController.contentOffset.x,
                             y: -canvasController.contentOffset.y)
                     .allowsHitTesting(imageEditMode || studyMode)
+
+                // NOSSO laço: por cima de tudo quando o modo laço está ligado (zoom fica em 1,
+                // então as coordenadas batem 1:1 com a escrita).
+                if canvasController.selectionActive {
+                    LassoSelectionView(controller: canvasController)
+                }
             }
             .clipped()
             .onAppear { pageSize = geo.size }
@@ -359,6 +370,66 @@ struct NotebookView: View {
         .background(Color.accentColor.opacity(0.12))
     }
 
+    /// Faixa de ações do NOSSO laço: aumentar/diminuir, cor, duplicar, apagar (quando há
+    /// escrita selecionada) e sair. A instrução aparece enquanto nada está selecionado.
+    private var selectBanner: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "lasso")
+            if canvasController.selectionBounds != nil {
+                Button { canvasController.scaleSelection(1.2) } label: {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .accessibilityLabel("Aumentar")
+                Button { canvasController.scaleSelection(0.8) } label: {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .accessibilityLabel("Diminuir")
+                selectColorMenu
+                Button { canvasController.duplicateSelection() } label: {
+                    Image(systemName: "plus.square.on.square")
+                }
+                .accessibilityLabel("Duplicar")
+                Button(role: .destructive) { canvasController.deleteSelection() } label: {
+                    Image(systemName: "trash")
+                }
+                .accessibilityLabel("Apagar")
+                Text("arraste dentro da caixa para mover")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Cerque a escrita com o laço para selecionar.")
+                    .font(.caption.weight(.medium))
+            }
+            Spacer()
+            Button("Sair") { canvasController.endSelectMode() }
+                .font(.caption.weight(.semibold))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(Color.accentColor.opacity(0.12))
+    }
+
+    /// Menu de cor para a escrita selecionada.
+    private var selectColorMenu: some View {
+        Menu {
+            selectColorButton("Preto", "#000000")
+            selectColorButton("Azul", "#1E6FE8")
+            selectColorButton("Vermelho", "#E23B3B")
+            selectColorButton("Verde", "#2F9E44")
+            selectColorButton("Laranja", "#F08C00")
+            selectColorButton("Roxo", "#7C4DD6")
+        } label: {
+            Image(systemName: "paintpalette")
+        }
+        .accessibilityLabel("Mudar cor")
+    }
+
+    private func selectColorButton(_ name: String, _ hex: String) -> some View {
+        Button(name) {
+            if let ui = lassoUIColor(hex) { canvasController.colorSelection(ui) }
+        }
+    }
+
     // MARK: - Barra superior
 
     private var topBar: some View {
@@ -437,6 +508,23 @@ struct NotebookView: View {
             }
             .tint(studyMode ? .accentColor : nil)
             .accessibilityLabel(studyMode ? "Sair do modo estudo" : "Modo estudo")
+
+            // Laço (nosso): selecionar a escrita para redimensionar/mudar cor/mover.
+            Button {
+                if canvasController.selectionActive {
+                    canvasController.endSelectMode()
+                } else {
+                    imageEditMode = false
+                    studyMode = false
+                    selectedElementID = nil
+                    canvasController.resetZoom()
+                    canvasController.beginSelectMode()
+                }
+            } label: {
+                Image(systemName: canvasController.selectionActive ? "lasso.badge.sparkles" : "lasso")
+            }
+            .tint(canvasController.selectionActive ? .accentColor : nil)
+            .accessibilityLabel("Selecionar escrita com o laço")
 
             // Modo formas (liga/desliga): ao levantar a caneta, o traço vira forma perfeita.
             Button {
@@ -690,6 +778,9 @@ struct NotebookView: View {
         // riscar (ex.: numa página de PDF recém-importada). Bug do "não deixa riscar".
         imageEditMode = false
         studyMode = false
+        // O laço vale para a escrita da página atual; ao trocar de página, sai do modo laço
+        // (o canvas é recriado e a seleção antiga não faz mais sentido).
+        canvasController.endSelectMode()
         // Cada página começa em 100%. O canvas é recriado ao trocar de página (.id), então
         // zeramos o zoom espelhado para o papel não herdar o zoom da página anterior.
         canvasController.resetZoom()
@@ -1156,4 +1247,15 @@ struct NotebookView: View {
 private struct ShareItem: Identifiable {
     let id = UUID()
     let url: URL
+}
+
+/// Converte "#RRGGBB" em `UIColor` (para recolorir a escrita selecionada pelo laço).
+fileprivate func lassoUIColor(_ hex: String) -> UIColor? {
+    var s = hex.trimmingCharacters(in: .whitespaces)
+    if s.hasPrefix("#") { s.removeFirst() }
+    guard s.count == 6, let value = UInt32(s, radix: 16) else { return nil }
+    let r = CGFloat((value >> 16) & 0xFF) / 255
+    let g = CGFloat((value >> 8) & 0xFF) / 255
+    let b = CGFloat(value & 0xFF) / 255
+    return UIColor(red: r, green: g, blue: b, alpha: 1)
 }

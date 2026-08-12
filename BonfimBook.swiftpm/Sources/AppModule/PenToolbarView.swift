@@ -86,7 +86,6 @@ struct PenToolbarView: View {
             penButton(.marker, symbol: "highlighter", label: "Marca-texto")
             penButton(.pencil, symbol: "pencil", label: "Lápis")
             penButton(.eraser, symbol: "eraser", label: "Borracha")
-            penButton(.lasso, symbol: "lasso", label: "Selecionar")
         }
     }
 
