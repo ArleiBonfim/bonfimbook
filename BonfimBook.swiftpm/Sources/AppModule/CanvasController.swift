@@ -266,6 +266,18 @@ final class CanvasController: ObservableObject {
         recomputeBounds()
     }
 
+    /// Devolve a escrita selecionada como imagem (para reconhecer o texto) + o retângulo dela.
+    func selectionAsImage() -> (image: UIImage, bounds: CGRect)? {
+        guard let canvas = canvas, !selectedIndices.isEmpty, let b = selectionBounds, b.width > 1, b.height > 1
+        else { return nil }
+        let strokes = canvas.drawing.strokes
+        let selected = selectedIndices.filter { strokes.indices.contains($0) }.map { strokes[$0] }
+        guard !selected.isEmpty else { return nil }
+        let drawing = PKDrawing(strokes: selected)
+        let image = drawing.image(from: b, scale: 2)
+        return (image, b)
+    }
+
     // MARK: Auxiliares do laço
 
     /// Reconstrói o desenho aplicando `transform` só aos traços selecionados.

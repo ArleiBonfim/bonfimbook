@@ -71,6 +71,9 @@ struct NotebookView: View {
     @State private var organizeText = ""
     @State private var showOrganizeResult = false
     @State private var isRemovingBG = false
+    @State private var isConverting = false
+    // Busca dentro da letra (OCR).
+    @State private var showSearch = false
 
     // Dimensões lógicas de referência quando ainda não sabemos o tamanho real da tela.
     private static let fallbackSize = CGSize(width: 768, height: 1024)
@@ -175,6 +178,11 @@ struct NotebookView: View {
                     libraryRoot: (try? NotebookLibrary.defaultDirectory()) ?? URL(fileURLWithPath: NSTemporaryDirectory()),
                     onFinished: {}
                 )
+            }
+            .sheet(isPresented: $showSearch) {
+                SearchView(store: store, pages: pages) { index in
+                    goToPage(index)
+                }
             }
     }
 
@@ -419,6 +427,10 @@ struct NotebookView: View {
                 }
                 .accessibilityLabel("Diminuir")
                 selectColorMenu
+                Button { convertSelectionToText() } label: {
+                    Image(systemName: "text.viewfinder")
+                }
+                .accessibilityLabel("Virar texto digitado")
                 Button { canvasController.duplicateSelection() } label: {
                     Image(systemName: "plus.square.on.square")
                 }
@@ -610,6 +622,12 @@ struct NotebookView: View {
     /// Menu "Mais": exportar PDF, renomear e a política de entrada da caneta.
     private var moreMenu: some View {
         Menu {
+            Button {
+                showSearch = true
+            } label: {
+                Label("Buscar na anotação", systemImage: "magnifyingglass")
+            }
+
             Button {
                 showPDFImport = true
             } label: {
@@ -1038,6 +1056,48 @@ struct NotebookView: View {
         }
     }
 
+    /// Converte a ESCRITA selecionada pelo laço em uma caixa de TEXTO digitado (OCR), no mesmo
+    /// lugar, e apaga os traços convertidos. Reconhecimento roda fora da main thread.
+    private func convertSelectionToText() {
+        guard let (image, bounds) = canvasController.selectionAsImage() else {
+            errorMessage = "Selecione a escrita com o laço antes de converter."
+            return
+        }
+        isConverting = true
+        Task {
+            let recognized = await Task.detached(priority: .userInitiated) {
+                OCRService.recognizeText(in: image)
+            }.value
+            await MainActor.run {
+                isConverting = false
+                let text = recognized.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else {
+                    errorMessage = "Não consegui reconhecer o texto dessa escrita. Tente selecionar com a letra mais separada."
+                    return
+                }
+                let element = PageElement(
+                    kind: .text,
+                    x: Double(bounds.minX),
+                    y: Double(bounds.minY),
+                    width: Double(max(bounds.width, 160)),
+                    height: Double(max(bounds.height, 44)),
+                    text: text,
+                    fontSize: 22,
+                    colorHex: "#000000"
+                )
+                var newElements = elements
+                newElements.append(element)
+                elements = newElements
+                persistElements(newElements)
+                // Apaga a escrita à mão que virou texto e sai do laço, entrando no modo imagem.
+                canvasController.deleteSelection()
+                canvasController.endSelectMode()
+                imageEditMode = true
+                selectedElementID = element.id
+            }
+        }
+    }
+
     /// Cria uma caixa de texto no centro da página, seleciona-a e já abre o editor.
     private func insertTextBox() {
         guard currentPage != nil else { return }
@@ -1182,6 +1242,7 @@ struct NotebookView: View {
         if isGenerating { return "Gerando imagem…" }
         if isOrganizing { return "Organizando…" }
         if isRemovingBG { return "Removendo fundo…" }
+        if isConverting { return "Reconhecendo a letra…" }
         return nil
     }
 
