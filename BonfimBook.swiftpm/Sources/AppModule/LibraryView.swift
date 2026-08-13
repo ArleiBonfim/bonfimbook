@@ -31,6 +31,8 @@ struct LibraryView: View {
     @State private var renameText: String = ""
     @State private var pendingFolderDelete: FolderRef?
     @State private var pendingMove: NotebookRef?
+    @State private var pendingMoveToNewFolder: NotebookRef?
+    @State private var moveNewFolderName = ""
     @State private var showNewFolder = false
     @State private var newFolderName = ""
     @State private var showDiagnostics = false
@@ -164,6 +166,13 @@ struct LibraryView: View {
             } message: {
                 Text("Dê um nome para a nova pasta.")
             }
+            .alert("Nova pasta e mover", isPresented: boolBinding($pendingMoveToNewFolder)) {
+                TextField("Nome da pasta (ex.: Inglês)", text: $moveNewFolderName)
+                Button("Cancelar", role: .cancel) { pendingMoveToNewFolder = nil }
+                Button("Criar e mover") { createFolderAndMove() }
+            } message: {
+                Text("Crio a pasta e já movo este caderno para dentro dela.")
+            }
             .alert(
                 "Algo deu errado",
                 isPresented: boolBinding($errorMessage),
@@ -249,12 +258,10 @@ struct LibraryView: View {
                     } label: {
                         Label("Renomear", systemImage: "pencil")
                     }
-                    if !folders.isEmpty || !isAtRoot {
-                        Button {
-                            pendingMove = ref
-                        } label: {
-                            Label("Mover para pasta", systemImage: "folder")
-                        }
+                    Button {
+                        pendingMove = ref
+                    } label: {
+                        Label("Mover para pasta", systemImage: "folder")
                     }
                     if ref.isLocked {
                         Button {
@@ -283,6 +290,12 @@ struct LibraryView: View {
     /// estivermos na raiz — a opção de subir um nível.
     @ViewBuilder
     private func moveTargets(for ref: NotebookRef) -> some View {
+        // Criar uma pasta na hora e já mover o caderno para ela (resolve o "não tenho pasta ainda").
+        Button("➕ Nova pasta…") {
+            pendingMove = nil
+            moveNewFolderName = ""
+            pendingMoveToNewFolder = ref
+        }
         ForEach(folders, id: \.url) { folder in
             Button(folder.name) { moveNotebook(ref, to: folder.url) }
         }
@@ -312,6 +325,24 @@ struct LibraryView: View {
                     .frame(minHeight: 50)
             }
             .buttonStyle(.borderedProminent)
+
+            Button {
+                newFolderName = ""
+                showNewFolder = true
+            } label: {
+                Label("Nova pasta", systemImage: "folder.badge.plus")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.bordered)
+
+            if isAtRoot {
+                Text("Dica: crie pastas como \u{201C}Inglês\u{201D} ou \u{201C}Pessoal\u{201D} e mova seus cadernos para dentro (segure o caderno \u{2192} Mover para pasta).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 8)
+                    .frame(maxWidth: 360)
+            }
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -558,6 +589,19 @@ struct LibraryView: View {
             reload()
         } catch {
             errorMessage = "Não foi possível apagar a pasta: \(error.localizedDescription)"
+        }
+    }
+
+    /// Cria uma pasta nova na pasta atual e já move o caderno para dentro dela.
+    private func createFolderAndMove() {
+        guard let ref = pendingMoveToNewFolder, let dir = currentDir else { return }
+        pendingMoveToNewFolder = nil
+        do {
+            let folderURL = try NotebookLibrary.createFolder(in: dir, name: moveNewFolderName)
+            _ = try NotebookLibrary.move(ref.url, to: folderURL)
+            reload()
+        } catch {
+            errorMessage = "Não foi possível criar a pasta e mover: \(error.localizedDescription)"
         }
     }
 
